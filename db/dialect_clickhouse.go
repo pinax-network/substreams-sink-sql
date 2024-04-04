@@ -131,6 +131,8 @@ func (d clickhouseDialect) OnlyInserts() bool {
 	return true
 }
 
+func (d clickhouseDialect) AllowPkDuplicates() bool { return true }
+
 func (d clickhouseDialect) CreateUser(tx Tx, ctx context.Context, l *Loader, username string, password string, _database string, readOnly bool) error {
 	user, pass := EscapeIdentifier(username), escapeStringValue(password)
 
@@ -237,6 +239,7 @@ func convertToType(value string, valueType reflect.Type) (any, error) {
 			if err != nil {
 				return "", fmt.Errorf("could not convert %s to time: %w", value, err)
 			}
+
 			return v.Unix(), nil
 		}
 		return "", fmt.Errorf("unsupported struct type %s", valueType)
