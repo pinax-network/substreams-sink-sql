@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
-
 	"github.com/jimsmart/schema"
 	"github.com/streamingfast/logging"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -39,8 +37,11 @@ type Loader struct {
 	tables       map[string]*TableInfo
 	cursorTable  *TableInfo
 
-	handleReorgs       bool
-	flushInterval      time.Duration
+	handleReorgs            bool
+	batchBlockFlushInterval int
+	batchRowFlushInterval   int
+	liveBlockFlushInterval  int
+
 	moduleMismatchMode OnModuleHashMismatch
 
 	logger *zap.Logger
@@ -51,7 +52,9 @@ type Loader struct {
 
 func NewLoader(
 	psqlDsn string,
-	flushInterval time.Duration,
+	batchBlockFlushInterval int,
+	batchRowFlushInterval int,
+	liveBlockFlushInterval int,
 	moduleMismatchMode OnModuleHashMismatch,
 	handleReorgs *bool,
 	logger *zap.Logger,
@@ -68,15 +71,17 @@ func NewLoader(
 	}
 
 	l := &Loader{
-		DB:                 db,
-		database:           dsn.database,
-		schema:             dsn.schema,
-		entries:            NewOrderedMap[string, *OrderedMap[string, *Operation]](),
-		tables:             map[string]*TableInfo{},
-		flushInterval:      flushInterval,
-		moduleMismatchMode: moduleMismatchMode,
-		logger:             logger,
-		tracer:             tracer,
+		DB:                      db,
+		database:                dsn.database,
+		schema:                  dsn.schema,
+		entries:                 NewOrderedMap[string, *OrderedMap[string, *Operation]](),
+		tables:                  map[string]*TableInfo{},
+		batchBlockFlushInterval: batchBlockFlushInterval,
+		batchRowFlushInterval:   batchRowFlushInterval,
+		liveBlockFlushInterval:  liveBlockFlushInterval,
+		moduleMismatchMode:      moduleMismatchMode,
+		logger:                  logger,
+		tracer:                  tracer,
 	}
 	_, err = l.tryDialect()
 	if err != nil {
@@ -95,7 +100,9 @@ func NewLoader(
 	}
 
 	logger.Info("created new DB loader",
-		zap.Duration("flush_interval", flushInterval),
+		zap.Int("batch_block_flush_interval", batchBlockFlushInterval),
+		zap.Int("batch_row_flush_interval", batchRowFlushInterval),
+		zap.Int("live_block_flush_interval", liveBlockFlushInterval),
 		zap.String("driver", dsn.driver),
 		zap.String("database", dsn.database),
 		zap.String("schema", dsn.schema),
@@ -129,8 +136,18 @@ func (l *Loader) BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error) {
 	return l.DB.BeginTx(ctx, opts)
 }
 
-func (l *Loader) FlushInterval() time.Duration {
-	return l.flushInterval
+func (l *Loader) BatchBlockFlushInterval() int {
+	return l.batchBlockFlushInterval
+}
+
+func (l *Loader) LiveBlockFlushInterval() int { return l.liveBlockFlushInterval }
+
+func (l *Loader) FlushNeeded() bool {
+	totalRows := 0
+	for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
+		totalRows += pair.Value.Len()
+	}
+	return totalRows > l.batchRowFlushInterval
 }
 
 func (l *Loader) LoadTables() error {

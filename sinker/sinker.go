@@ -118,8 +118,13 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		return fmt.Errorf("apply database changes: %w", err)
 	}
 
-	if data.Clock.Number%s.batchBlockModulo(data, isLive) == 0 {
-		s.logger.Debug("flushing to database", zap.Stringer("block", cursor.Block()), zap.Bool("is_live", *isLive))
+	if data.Clock.Number%s.batchBlockModulo(data, isLive) == 0 || s.loader.FlushNeeded() {
+		s.logger.Debug("flushing to database",
+			zap.Stringer("block", cursor.Block()),
+			zap.Bool("is_live", *isLive),
+			zap.Bool("block_flush_interval_reached", data.Clock.Number%s.batchBlockModulo(data, isLive) == 0),
+			zap.Bool("row_flush_interval_reached", s.loader.FlushNeeded()),
+		)
 
 		flushStart := time.Now()
 		rowFlushedCount, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
@@ -219,8 +224,8 @@ func (s *SQLSinker) batchBlockModulo(blockData *pbsubstreamsrpc.BlockScopedData,
 		return LIVE_BLOCK_FLUSH_EACH
 	}
 
-	if s.loader.FlushInterval() > 0 {
-		return uint64(s.loader.FlushInterval())
+	if s.loader.BatchBlockFlushInterval() > 0 {
+		return uint64(s.loader.BatchBlockFlushInterval())
 	}
 
 	return HISTORICAL_BLOCK_FLUSH_EACH
