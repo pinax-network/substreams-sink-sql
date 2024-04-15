@@ -17,11 +17,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-const (
-	HISTORICAL_BLOCK_FLUSH_EACH = 1000
-	LIVE_BLOCK_FLUSH_EACH       = 1
-)
-
 type SQLSinker struct {
 	*shutter.Shutter
 	*sink.Sinker
@@ -118,7 +113,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		return fmt.Errorf("apply database changes: %w", err)
 	}
 
-	if data.Clock.Number%s.batchBlockModulo(data, isLive) == 0 || s.loader.FlushNeeded() {
+	if (s.batchBlockModulo(data, isLive) > 0 && data.Clock.Number%s.batchBlockModulo(data, isLive) == 0) || s.loader.FlushNeeded() {
 		s.logger.Debug("flushing to database",
 			zap.Stringer("block", cursor.Block()),
 			zap.Bool("is_live", *isLive),
@@ -221,12 +216,12 @@ func (s *SQLSinker) batchBlockModulo(blockData *pbsubstreamsrpc.BlockScopedData,
 	}
 
 	if *isLive {
-		return LIVE_BLOCK_FLUSH_EACH
+		return uint64(s.loader.LiveBlockFlushInterval())
 	}
 
 	if s.loader.BatchBlockFlushInterval() > 0 {
 		return uint64(s.loader.BatchBlockFlushInterval())
 	}
 
-	return HISTORICAL_BLOCK_FLUSH_EACH
+	return 0
 }
