@@ -24,8 +24,8 @@ func NewStats(logger *zap.Logger) *Stats {
 	return &Stats{
 		Shutter: shutter.New(),
 
-		dbFlushRate:        dmetrics.MustNewAvgRateFromPromCounter(FlushCount, 1*time.Second, 30*time.Second, "flush"),
-		dbFlushAvgDuration: dmetrics.NewAvgDurationCounter(30*time.Second, dmetrics.InferUnit, "per flush"),
+		dbFlushRate:        dmetrics.MustNewAvgRateFromPromCounter(FlushCount, 1*time.Minute, 30*time.Minute, "flush"),
+		dbFlushAvgDuration: dmetrics.NewAvgDurationCounter(1*time.Minute, dmetrics.InferUnit, "per flush"),
 		flusehdRows:        dmetrics.NewValueFromMetric(FlushedRowsCount, "rows"),
 		logger:             logger,
 
