@@ -18,6 +18,8 @@ var sinkSetupCmd = Command(sinkSetupE,
 	"Setup the required infrastructure to deploy a Substreams SQL deployable unit",
 	ExactArgs(2),
 	Flags(func(flags *pflag.FlagSet) {
+		AddCommonSinkerFlags(flags)
+
 		flags.Bool("postgraphile", false, "Will append the necessary 'comments' on cursors table to fully support postgraphile")
 		flags.Bool("system-tables-only", false, "will only create/update the systems tables (cursors, substreams_history) and ignore the schema from the manifest")
 		flags.Bool("ignore-duplicate-table-errors", false, "[Dev] Use this if you want to ignore duplicate table errors, take caution that this means the 'schemal.sql' file will not have run fully!")
@@ -46,7 +48,7 @@ func sinkSetupE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("extract sink config: %w", err)
 	}
 
-	dbLoader, err := db.NewLoader(dsn, 0, 0, 0, "cursors", db.OnModuleHashMismatchError, nil, zlog, tracer)
+	dbLoader, err := db.NewLoader(dsn, 0, 0, 0, sflags.MustGetString(cmd, "cursors-table"), db.OnModuleHashMismatchError, nil, zlog, tracer)
 	if err != nil {
 		return fmt.Errorf("new psql loader: %w", err)
 	}

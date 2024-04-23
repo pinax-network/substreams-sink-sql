@@ -96,6 +96,7 @@ func AddCommonSinkerFlags(flags *pflag.FlagSet) {
 		- If 'ignore' is set, we pick the cursor at the highest block number and use it as the starting point. Subsequent
 		updates to the cursor will overwrite the module hash in the database.
 	`))
+	flags.String("cursors-table", "cursors", "name of the cursors table")
 }
 
 func readBlockRangeArgument(in string) (blockRange *bstream.Range, err error) {
