@@ -183,7 +183,7 @@ func (d postgresDialect) pruneReversibleSegment(tx Tx, ctx context.Context, sche
 	return nil
 }
 
-func (d postgresDialect) GetCreateCursorQuery(schema string, withPostgraphile bool) string {
+func (d postgresDialect) GetCreateCursorQuery(schema string, cursorsTable string, withPostgraphile bool) string {
 	out := fmt.Sprintf(cli.Dedent(`
 		create table if not exists %s.%s
 		(
@@ -192,10 +192,10 @@ func (d postgresDialect) GetCreateCursorQuery(schema string, withPostgraphile bo
 			block_num  bigint,
 			block_id   text
 		);
-		`), EscapeIdentifier(schema), EscapeIdentifier(CURSORS_TABLE))
+		`), EscapeIdentifier(schema), EscapeIdentifier(cursorsTable))
 	if withPostgraphile {
 		out += fmt.Sprintf("COMMENT ON TABLE %s.%s IS E'@omit';",
-			EscapeIdentifier(schema), EscapeIdentifier(CURSORS_TABLE))
+			EscapeIdentifier(schema), EscapeIdentifier(cursorsTable))
 	}
 	return out
 }

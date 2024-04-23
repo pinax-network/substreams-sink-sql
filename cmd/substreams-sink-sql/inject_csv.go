@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"github.com/streamingfast/cli/sflags"
 	"io"
 	"regexp"
 	"strconv"
@@ -67,7 +68,7 @@ func injectCSVE(cmd *cobra.Command, args []string) error {
 	t0 := time.Now()
 
 	zlog.Debug("table filler", zap.String("pg_schema", sqlDSN.Schema()), zap.String("table_name", tableName), zap.Stringer("range", blockRange))
-	filler := NewTableFiller(pool, sqlDSN.Schema(), tableName, blockRange.StartBlock(), *blockRange.EndBlock(), inputStore)
+	filler := NewTableFiller(pool, sqlDSN.Schema(), tableName, sflags.MustGetString(cmd, "cursors-table"), blockRange.StartBlock(), *blockRange.EndBlock(), inputStore)
 
 	if err := filler.Run(ctx); err != nil {
 		return fmt.Errorf("table filler %q: %w", tableName, err)
@@ -78,8 +79,9 @@ func injectCSVE(cmd *cobra.Command, args []string) error {
 }
 
 type TableFiller struct {
-	pqSchema string
-	tblName  string
+	pqSchema     string
+	tblName      string
+	cursorsTable string
 
 	in            dstore.Store
 	startBlockNum uint64
@@ -87,10 +89,11 @@ type TableFiller struct {
 	pool          *pgxpool.Pool
 }
 
-func NewTableFiller(pool *pgxpool.Pool, pqSchema, tblName string, startBlockNum, stopBlockNum uint64, inStore dstore.Store) *TableFiller {
+func NewTableFiller(pool *pgxpool.Pool, pqSchema, tblName, cursorsTable string, startBlockNum, stopBlockNum uint64, inStore dstore.Store) *TableFiller {
 	return &TableFiller{
 		tblName:       tblName,
 		pqSchema:      pqSchema,
+		cursorsTable:  cursorsTable,
 		pool:          pool,
 		startBlockNum: startBlockNum,
 		stopBlockNum:  stopBlockNum,
@@ -125,7 +128,7 @@ func extractFieldsFromReader(reader io.Reader) ([]string, error) {
 func (t *TableFiller) Run(ctx context.Context) error {
 	zlog.Info("table filler", zap.String("table", t.tblName))
 
-	if t.tblName == db.CURSORS_TABLE {
+	if t.tblName == t.cursorsTable {
 		return t.injectCursorsTable(ctx)
 	}
 
@@ -160,11 +163,11 @@ func (t *TableFiller) Run(ctx context.Context) error {
 }
 
 func (t *TableFiller) injectCursorsTable(ctx context.Context) error {
-	path := db.CURSORS_TABLE + "/" + lastCursorFilename
+	path := t.cursorsTable + "/" + lastCursorFilename
 	reader, err := t.in.OpenObject(ctx, path)
 	if err != nil {
 		if errors.Is(err, dstore.ErrNotFound) {
-			return fmt.Errorf("trying to inject %q table but the last cursor filename %q was not found in %s", db.CURSORS_TABLE, path, t.in.BaseURL())
+			return fmt.Errorf("trying to inject %q table but the last cursor filename %q was not found in %s", t.cursorsTable, path, t.in.BaseURL())
 		}
 
 		return fmt.Errorf("open object %q: %w", lastCursorFilename, err)
@@ -183,7 +186,7 @@ func (t *TableFiller) injectCursorsTable(ctx context.Context) error {
 
 	zlog.Info("injecting cursors table")
 	if err := t.injectCSVFromReader(ctx, bytes.NewBuffer(content), "<generated>", dbColumns); err != nil {
-		return fmt.Errorf("failed to inject %q table content: %w", db.CURSORS_TABLE, err)
+		return fmt.Errorf("failed to inject %q table content: %w", t.cursorsTable, err)
 	}
 
 	return nil

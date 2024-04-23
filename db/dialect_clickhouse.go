@@ -84,7 +84,7 @@ func (d clickhouseDialect) Revert(tx Tx, ctx context.Context, l *Loader, lastVal
 	return fmt.Errorf("clickhouse driver does not support reorg management.")
 }
 
-func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile bool) string {
+func (d clickhouseDialect) GetCreateCursorQuery(schema string, cursorsTable string, withPostgraphile bool) string {
 	_ = withPostgraphile // TODO: see if this can work
 	return fmt.Sprintf(cli.Dedent(`
 	CREATE TABLE IF NOT EXISTS %s.%s
@@ -94,7 +94,7 @@ func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile 
 		block_num  Int64,
 		block_id   String
 	) Engine = ReplacingMergeTree() ORDER BY id;
-	`), EscapeIdentifier(schema), EscapeIdentifier(CURSORS_TABLE))
+	`), EscapeIdentifier(schema), EscapeIdentifier(cursorsTable))
 }
 
 func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile bool) string {

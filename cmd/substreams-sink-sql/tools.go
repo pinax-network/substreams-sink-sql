@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/streamingfast/cli/sflags"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -65,7 +66,7 @@ var sinkToolsCmd = Group(
 )
 
 func toolsReadCursorE(cmd *cobra.Command, _ []string) error {
-	loader := toolsCreateLoader()
+	loader := toolsCreateLoader(cmd)
 
 	out, err := loader.GetAllCursors(cmd.Context())
 	cli.NoError(err, "Unable to get all cursors")
@@ -83,7 +84,7 @@ func toolsReadCursorE(cmd *cobra.Command, _ []string) error {
 }
 
 func toolsWriteCursorE(cmd *cobra.Command, args []string) error {
-	loader := toolsCreateLoader()
+	loader := toolsCreateLoader(cmd)
 
 	moduleHash := args[0]
 	opaqueCursor := args[1]
@@ -114,7 +115,7 @@ func toolsWriteCursorE(cmd *cobra.Command, args []string) error {
 }
 
 func toolsDeleteCursorE(cmd *cobra.Command, args []string) error {
-	loader := toolsCreateLoader()
+	loader := toolsCreateLoader(cmd)
 
 	moduleHash := ""
 	if !viper.GetBool("tools-cursor-delete-all") {
@@ -143,9 +144,9 @@ func toolsDeleteCursorE(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func toolsCreateLoader() *db.Loader {
+func toolsCreateLoader(cmd *cobra.Command) *db.Loader {
 	dsn := viper.GetString("tools-global-dsn")
-	loader, err := db.NewLoader(dsn, 0, 0, 0, db.OnModuleHashMismatchIgnore, nil, zlog, tracer)
+	loader, err := db.NewLoader(dsn, 0, 0, 0, sflags.MustGetString(cmd, "cursors-table"), db.OnModuleHashMismatchIgnore, nil, zlog, tracer)
 	cli.NoError(err, "Unable to instantiate database manager from DSN %q", dsn)
 
 	if err := loader.LoadTables(); err != nil {
