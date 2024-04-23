@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const CURSORS_TABLE = "cursors"
 const HISTORY_TABLE = "substreams_history"
 
 // Make the typing a bit easier
@@ -30,12 +29,13 @@ type SystemTableError struct {
 type Loader struct {
 	*sql.DB
 
-	database     string
-	schema       string
-	entries      *OrderedMap[string, *OrderedMap[string, *Operation]]
-	entriesCount uint64
-	tables       map[string]*TableInfo
-	cursorTable  *TableInfo
+	database        string
+	schema          string
+	entries         *OrderedMap[string, *OrderedMap[string, *Operation]]
+	entriesCount    uint64
+	tables          map[string]*TableInfo
+	cursorTableName string
+	cursorTable     *TableInfo
 
 	handleReorgs            bool
 	batchBlockFlushInterval int
@@ -55,6 +55,7 @@ func NewLoader(
 	batchBlockFlushInterval int,
 	batchRowFlushInterval int,
 	liveBlockFlushInterval int,
+	cursorTableName string,
 	moduleMismatchMode OnModuleHashMismatch,
 	handleReorgs *bool,
 	logger *zap.Logger,
@@ -76,6 +77,7 @@ func NewLoader(
 		schema:                  dsn.schema,
 		entries:                 NewOrderedMap[string, *OrderedMap[string, *Operation]](),
 		tables:                  map[string]*TableInfo{},
+		cursorTableName:         cursorTableName,
 		batchBlockFlushInterval: batchBlockFlushInterval,
 		batchRowFlushInterval:   batchRowFlushInterval,
 		liveBlockFlushInterval:  liveBlockFlushInterval,
@@ -150,6 +152,10 @@ func (l *Loader) FlushNeeded() bool {
 	return totalRows > l.batchRowFlushInterval
 }
 
+func (l *Loader) CursorTableName() string {
+	return l.cursorTableName
+}
+
 func (l *Loader) LoadTables() error {
 	schemaTables, err := schema.Tables(l.DB)
 	if err != nil {
@@ -170,7 +176,7 @@ func (l *Loader) LoadTables() error {
 			continue
 		}
 
-		if tableName == CURSORS_TABLE {
+		if tableName == l.cursorTableName {
 			if err := l.validateCursorTables(columns); err != nil {
 				return fmt.Errorf("invalid cursors table: %w", err)
 			}
@@ -203,13 +209,13 @@ func (l *Loader) LoadTables() error {
 	}
 
 	if !seenCursorTable {
-		return &SystemTableError{fmt.Errorf(`%s.%s table is not found`, EscapeIdentifier(l.schema), CURSORS_TABLE)}
+		return &SystemTableError{fmt.Errorf(`%s.%s table is not found`, EscapeIdentifier(l.schema), l.cursorTableName)}
 	}
 	if l.handleReorgs && !seenHistoryTable {
 		return &SystemTableError{fmt.Errorf("%s.%s table is not found and reorgs handling is enabled", EscapeIdentifier(l.schema), HISTORY_TABLE)}
 	}
 
-	l.cursorTable = l.tables[CURSORS_TABLE]
+	l.cursorTable = l.tables[l.cursorTableName]
 
 	return nil
 }
@@ -241,7 +247,7 @@ func (l *Loader) validateCursorTables(columns []*sql.ColumnType) (err error) {
 			return &SystemTableError{fmt.Errorf("missing column %q from cursors", k)}
 		}
 	}
-	key, err := schema.PrimaryKey(l.DB, l.schema, CURSORS_TABLE)
+	key, err := schema.PrimaryKey(l.DB, l.schema, l.cursorTableName)
 	if err != nil {
 		return &SystemTableError{fmt.Errorf("failed getting primary key: %w", err)}
 	}
@@ -321,7 +327,7 @@ func (l *Loader) Setup(ctx context.Context, schemaSql string, withPostgraphile b
 }
 
 func (l *Loader) setupCursorTable(ctx context.Context, withPostgraphile bool) error {
-	query := l.getDialect().GetCreateCursorQuery(l.schema, withPostgraphile)
+	query := l.getDialect().GetCreateCursorQuery(l.schema, l.cursorTableName, withPostgraphile)
 	_, err := l.ExecContext(ctx, query)
 	return err
 }

@@ -84,7 +84,7 @@ func NewGenerateCSVSinker(
 		return nil, err
 	}
 
-	cursorsStore, err := csvOutputStore.SubStore(db.CURSORS_TABLE)
+	cursorsStore, err := csvOutputStore.SubStore(loader.CursorTableName())
 	if err != nil {
 		return nil, fmt.Errorf("cursors sub store: %w", err)
 	}
@@ -362,7 +362,7 @@ func (s *GenerateCSVSinker) HandleBlockRangeCompletion(ctx context.Context, curs
 func (s *GenerateCSVSinker) writeCursorsTable(ctx context.Context, lastCursor *sink.Cursor) error {
 	buffer := bytes.NewBuffer(make([]byte, 0, 1024))
 
-	columns := s.loader.GetColumnsForTable(db.CURSORS_TABLE)
+	columns := s.loader.GetColumnsForTable(s.loader.CursorTableName())
 	sort.Strings(columns)
 	buffer.WriteString(strings.Join(columns, ","))
 	buffer.WriteString("\n")
