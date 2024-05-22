@@ -13,7 +13,7 @@ env:
 
 jobs:
   build-vanilla:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     permissions:
       contents: read
@@ -21,29 +21,18 @@ jobs:
 
     strategy:
       matrix:
-        go-version: [1.20.x]
+        go-version: [1.22.x]
 
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-
-      - name: Set up Go cache
-        uses: actions/cache@v3
-        id: cache-go
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
 
       - name: Print branch name
         id: extract_branch
