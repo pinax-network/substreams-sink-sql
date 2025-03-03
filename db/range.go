@@ -10,14 +10,8 @@ import (
 
 var ErrRangeNotFound = errors.New("range not found")
 
-type ProcessedRange struct {
-	ModuleHash string
-	BlockStart uint64
-	BlockEnd   uint64
-}
-
 // UpdateProcessedRange updates an existing processed range.
-func (l *Loader) UpdateProcessedRange(ctx context.Context, tx Tx, moduleHash string, blockStart, blockEnd uint64) error {
+func (l *Loader) UpdateProcessedRange(ctx context.Context, tx Tx, moduleHash string, blockEnd uint64) error {
 
 	if l.processedRangeTable == nil {
 		return nil
@@ -25,10 +19,10 @@ func (l *Loader) UpdateProcessedRange(ctx context.Context, tx Tx, moduleHash str
 
 	l.logger.Debug("updating processed range",
 		zap.String("module_hash", moduleHash),
-		zap.Uint64("block_start", blockStart),
+		zap.Uint64("block_start", l.sinkRange.StartBlock()),
 		zap.Uint64("block_end", blockEnd))
 
-	query := l.getDialect().GetUpdateProcessedRangeQuery(l.schema, moduleHash, blockStart, blockEnd)
+	query := l.getDialect().GetUpdateProcessedRangeQuery(l.schema, moduleHash, l.sinkRange.StartBlock(), blockEnd)
 
 	var executor sqlExecutor = l.DB
 	if tx != nil {

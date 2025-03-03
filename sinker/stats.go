@@ -68,7 +68,7 @@ func (s *Stats) Start(each time.Duration, cursor *sink.Cursor) {
 func (s *Stats) LogNow() {
 	// Logging fields order is important as it affects the final rendering, we carefully ordered
 	// them so the development logs looks nicer.
-	s.logger.Info("postgres sink stats",
+	s.logger.Info("sql sink stats",
 		zap.Stringer("db_flush_rate", s.dbFlushRate),
 		zap.Stringer("db_flush_duration_rate", s.dbFlushAvgDuration),
 		zap.Uint64("flushed_rows", s.flusehdRows.ValueUint()),

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jimsmart/schema"
+	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/logging"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"go.uber.org/zap"
@@ -44,6 +45,7 @@ type Loader struct {
 	batchBlockFlushInterval int
 	batchRowFlushInterval   int
 	liveBlockFlushInterval  int
+	sinkRange               *bstream.Range
 	moduleMismatchMode      OnModuleHashMismatch
 
 	logger *zap.Logger
@@ -59,6 +61,7 @@ func NewLoader(
 	liveBlockFlushInterval int,
 	moduleMismatchMode OnModuleHashMismatch,
 	handleReorgs *bool,
+	sinkRange *bstream.Range,
 	logger *zap.Logger,
 	tracer logging.Tracer,
 ) (*Loader, error) {
@@ -82,6 +85,7 @@ func NewLoader(
 		batchBlockFlushInterval: batchBlockFlushInterval,
 		batchRowFlushInterval:   batchRowFlushInterval,
 		liveBlockFlushInterval:  liveBlockFlushInterval,
+		sinkRange:               sinkRange,
 		moduleMismatchMode:      moduleMismatchMode,
 		logger:                  logger,
 		tracer:                  tracer,
@@ -354,9 +358,6 @@ func (l *Loader) setupHistoryTable(ctx context.Context, withPostgraphile bool) e
 }
 
 func (l *Loader) setupProcessedRangeTable(ctx context.Context, withPostgraphile bool) error {
-	if l.getDialect().OnlyInserts() {
-		return nil
-	}
 	query := l.getDialect().GetCreateProcessedRangesQuery(l.schema, withPostgraphile)
 	_, err := l.ExecContext(ctx, query)
 	return err
