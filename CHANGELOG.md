@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+* Fixed a bug with not flushing rows on stream completion
 * Fixed cursor loading on Clickhouse
 * Improved batch block flush logic to flush after a certain number of blocks instead of taking by modulo
 
