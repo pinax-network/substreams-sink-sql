@@ -118,11 +118,12 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		}
 	}
 
-	if (s.batchBlockModulo(isLive) > 0 && data.Clock.Number%s.batchBlockModulo(isLive) == 0) || s.loader.FlushNeeded() {
+	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && data.Clock.Number-s.stats.GetLastBlockNum() >= s.batchBlockModulo(isLive)
+	if blockFlushNeeded || s.loader.FlushNeeded() {
 		s.logger.Debug("flushing to database",
 			zap.Stringer("block", cursor.Block()),
 			zap.Bool("is_live", *isLive),
-			zap.Bool("block_flush_interval_reached", s.batchBlockModulo(isLive) > 0 && data.Clock.Number%s.batchBlockModulo(isLive) == 0),
+			zap.Bool("block_flush_interval_reached", blockFlushNeeded),
 			zap.Bool("row_flush_interval_reached", s.loader.FlushNeeded()),
 		)
 
