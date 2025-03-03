@@ -221,6 +221,34 @@ func (d postgresDialect) GetCreateHistoryQuery(schema string, withPostgraphile b
 	return out
 }
 
+
+func (d postgresDialect) GetCreateProcessedRangesQuery(schema string, withPostgraphile bool) string {
+	out := fmt.Sprintf(cli.Dedent(`
+		CREATE TABLE IF NOT EXISTS %s (
+			module_hash TEXT NOT NULL,
+			block_start BIGINT NOT NULL,
+			block_end BIGINT NOT NULL,
+			PRIMARY KEY(module_hash, block_start)
+		);`),
+		d.processedRangesTable(schema),
+	)
+
+	if withPostgraphile {
+		out += fmt.Sprintf("COMMENT ON TABLE %s.%s IS E'@omit';", EscapeIdentifier(schema), EscapeIdentifier(PROCESSED_RANGES_TABLE))
+	}
+
+	return out
+}
+
+func (d postgresDialect) GetUpdateProcessedRangeQuery(schema, moduleHash string, blockStart, blockEnd uint64) string {
+	return query(`
+	INSERT INTO %s.processed_ranges (module_hash, block_start, block_end)
+	VALUES ('%s', %d, %d)
+	ON CONFLICT (module_hash, block_start)
+	DO UPDATE SET block_end = EXCLUDED.block_end;`, schema, moduleHash, blockStart, blockEnd)
+
+}
+
 func (d postgresDialect) ExecuteSetupScript(ctx context.Context, l *Loader, schemaSql string) error {
 	if _, err := l.ExecContext(ctx, schemaSql); err != nil {
 		return fmt.Errorf("exec schema: %w", err)
@@ -275,6 +303,10 @@ func (d postgresDialect) CreateUser(tx Tx, ctx context.Context, l *Loader, usern
 
 func (d postgresDialect) historyTable(schema string) string {
 	return fmt.Sprintf("%s.%s", EscapeIdentifier(schema), EscapeIdentifier(HISTORY_TABLE))
+}
+
+func (d postgresDialect) processedRangesTable(schema string) string {
+	return fmt.Sprintf("%s.%s", EscapeIdentifier(schema), EscapeIdentifier(PROCESSED_RANGES_TABLE))
 }
 
 func (d postgresDialect) saveInsert(schema string, table string, primaryKey map[string]string, blockNum uint64) string {

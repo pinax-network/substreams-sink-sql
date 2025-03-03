@@ -36,6 +36,10 @@ func (l *Loader) Flush(ctx context.Context, outputModuleHash string, cursor *sin
 		return 0, fmt.Errorf("update cursor: %w", err)
 	}
 
+	if err := l.UpdateProcessedRange(ctx, tx, outputModuleHash, 0/*TODO: change this to startBlock*/, cursor.Block().Num()); err != nil {
+		return 0, fmt.Errorf("update processed range: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("failed to commit db transaction: %w", err)
 	}
@@ -65,6 +69,10 @@ func (l *Loader) Revert(ctx context.Context, outputModuleHash string, cursor *si
 
 	if err := l.UpdateCursor(ctx, tx, outputModuleHash, cursor); err != nil {
 		return fmt.Errorf("update cursor after revert: %w", err)
+	}
+
+	if err := l.UpdateProcessedRange(ctx, tx, outputModuleHash, 0/*TODO: change this to startBlock*/, cursor.Block().Num()); err != nil {
+		return fmt.Errorf("update processed range: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

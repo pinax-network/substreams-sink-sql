@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
 	"github.com/jimsmart/schema"
 	"github.com/streamingfast/logging"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -13,6 +14,7 @@ import (
 
 var CURSORS_TABLE = "cursors"
 var HISTORY_TABLE = "substreams_history"
+var PROCESSED_RANGES_TABLE = "processed_ranges"
 
 // Make the typing a bit easier
 type OrderedMap[K comparable, V any] struct {
@@ -36,6 +38,7 @@ type Loader struct {
 	entriesCount uint64
 	tables       map[string]*TableInfo
 	cursorTable  *TableInfo
+	processedRangeTable *TableInfo
 
 	handleReorgs            bool
 	batchBlockFlushInterval int
@@ -75,6 +78,7 @@ func NewLoader(
 		schema:                  dsn.schema,
 		entries:                 NewOrderedMap[string, *OrderedMap[string, *Operation]](),
 		tables:                  map[string]*TableInfo{},
+		processedRangeTable:     nil,
 		batchBlockFlushInterval: batchBlockFlushInterval,
 		batchRowFlushInterval:   batchRowFlushInterval,
 		liveBlockFlushInterval:  liveBlockFlushInterval,
@@ -160,6 +164,7 @@ func (l *Loader) LoadTables() error {
 
 	seenCursorTable := false
 	seenHistoryTable := false
+	seenProcessedRangeTable := false
 	for schemaTableName, columns := range schemaTables {
 		schemaName := schemaTableName[0]
 		tableName := schemaTableName[1]
@@ -181,6 +186,9 @@ func (l *Loader) LoadTables() error {
 		}
 		if tableName == HISTORY_TABLE {
 			seenHistoryTable = true
+		}
+		if tableName == PROCESSED_RANGES_TABLE {
+			seenProcessedRangeTable = true
 		}
 
 		columnByName := make(map[string]*ColumnInfo, len(columns))
@@ -210,8 +218,12 @@ func (l *Loader) LoadTables() error {
 	if l.handleReorgs && !seenHistoryTable {
 		return &SystemTableError{fmt.Errorf("%s.%s table is not found and reorgs handling is enabled", EscapeIdentifier(l.schema), HISTORY_TABLE)}
 	}
+	if !seenProcessedRangeTable {
+		l.logger.Warn(fmt.Sprintf("%s.%s table is not present. Processed ranges will not be tracked", EscapeIdentifier(l.schema), PROCESSED_RANGES_TABLE))
+	}
 
 	l.cursorTable = l.tables[CURSORS_TABLE]
+	l.processedRangeTable = l.tables[PROCESSED_RANGES_TABLE]
 
 	return nil
 }
@@ -319,6 +331,10 @@ func (l *Loader) Setup(ctx context.Context, schemaSql string, withPostgraphile b
 		return fmt.Errorf("setup history table: %w", err)
 	}
 
+	if err := l.setupProcessedRangeTable(ctx, withPostgraphile); err != nil {
+		return fmt.Errorf("setup processed range table: %w", err)
+	}
+
 	return nil
 }
 
@@ -333,6 +349,15 @@ func (l *Loader) setupHistoryTable(ctx context.Context, withPostgraphile bool) e
 		return nil
 	}
 	query := l.getDialect().GetCreateHistoryQuery(l.schema, withPostgraphile)
+	_, err := l.ExecContext(ctx, query)
+	return err
+}
+
+func (l *Loader) setupProcessedRangeTable(ctx context.Context, withPostgraphile bool) error {
+	if l.getDialect().OnlyInserts() {
+		return nil
+	}
+	query := l.getDialect().GetCreateProcessedRangesQuery(l.schema, withPostgraphile)
 	_, err := l.ExecContext(ctx, query)
 	return err
 }

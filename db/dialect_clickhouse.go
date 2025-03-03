@@ -102,6 +102,25 @@ func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile
 	panic("clickhouse does not support reorg management")
 }
 
+func (d clickhouseDialect) GetCreateProcessedRangesQuery(schema string, withPostgraphile bool) string {
+	return query(`
+		CREATE TABLE IF NOT EXISTS %s.processed_ranges
+		(
+			module_hash String,
+			block_start UInt64,
+			block_end UInt64,
+			PRIMARY KEY(module_hash, block_start)
+		)
+		ENGINE = ReplacingMergeTree()
+		ORDER BY (module_hash, block_start)`, schema)
+}
+
+func (d clickhouseDialect) GetUpdateProcessedRangeQuery(schema, moduleHash string, blockStart, blockEnd uint64) string {
+	return query(`
+		INSERT INTO %s.processed_ranges (module_hash, block_start, block_end)
+		VALUES ('%s', %d, %d)`, schema, moduleHash, blockStart, blockEnd)
+}
+
 func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, schemaSql string) error {
 	for _, query := range strings.Split(schemaSql, ";") {
 		if len(strings.TrimSpace(query)) == 0 {
