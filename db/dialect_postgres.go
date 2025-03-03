@@ -234,6 +234,10 @@ func (d postgresDialect) GetUpdateCursorQuery(table, moduleHash string, cursor *
 	`, table, cursor, block_num, block_id, moduleHash)
 }
 
+func (d postgresDialect) GetAllCursorsQuery(table string) string {
+	return fmt.Sprintf("SELECT id, cursor, block_num, block_id FROM %s", table)
+}
+
 func (d postgresDialect) ParseDatetimeNormalization(value string) string {
 	return escapeStringValue(value)
 }

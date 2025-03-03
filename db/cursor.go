@@ -24,7 +24,8 @@ type cursorRow struct {
 // GetAllCursors returns an unordered map given for each module's hash recorded
 // the active cursor for it.
 func (l *Loader) GetAllCursors(ctx context.Context) (out map[string]*sink.Cursor, err error) {
-	rows, err := l.DB.QueryContext(ctx, fmt.Sprintf("SELECT id, cursor, block_num, block_id from %s", l.cursorTable.identifier))
+	query := l.getDialect().GetAllCursorsQuery(l.cursorTable.identifier)
+	rows, err := l.DB.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("query all cursors: %w", err)
 	}
