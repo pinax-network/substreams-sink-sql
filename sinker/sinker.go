@@ -211,6 +211,18 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 	return nil
 }
 
+
+func (s *SQLSinker) HandleBlockRangeCompletion(ctx context.Context, cursor *sink.Cursor) error {
+
+	s.logger.Info("stream completed, flushing to database", zap.Stringer("block", cursor.Block()))
+	_, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, cursor.Block().Num())
+	if err != nil {
+		return fmt.Errorf("failed to flush %s block on completion: %w", cursor.Block(), err)
+	}
+
+	return nil
+}
+
 func (s *SQLSinker) HandleBlockUndoSignal(ctx context.Context, data *pbsubstreamsrpc.BlockUndoSignal, cursor *sink.Cursor) error {
 	return s.loader.Revert(ctx, s.OutputModuleHash(), cursor, data.LastValidBlock.Number)
 }
