@@ -120,6 +120,10 @@ func (d clickhouseDialect) GetUpdateCursorQuery(table, moduleHash string, cursor
 	`, table, moduleHash, cursor, block_num, block_id)
 }
 
+func (d clickhouseDialect) GetAllCursorsQuery(table string) string {
+	return fmt.Sprintf("SELECT id, cursor, block_num, block_id FROM %s FINAL", table)
+}
+
 func (d clickhouseDialect) ParseDatetimeNormalization(value string) string {
 	return fmt.Sprintf("parseDateTimeBestEffort(%s)", escapeStringValue(value))
 }
