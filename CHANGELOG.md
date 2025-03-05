@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Fixed cursor loading on Clickhouse
 
+* Fixed a bug with not flushing rows on stream completion
+
 ## v4.5.0
 
 * Added more flags to configure flushing intervals.
