@@ -41,10 +41,6 @@ func (s *Stats) RecordFlushDuration(duration time.Duration) {
 	s.dbFlushAvgDuration.AddDuration(duration)
 }
 
-func (s *Stats) GetLastBlockNum() uint64 {
-	return s.lastBlock.Num()
-}
-
 func (s *Stats) Start(each time.Duration, cursor *sink.Cursor) {
 	if !cursor.IsBlank() {
 		s.lastBlock = cursor.Block()
