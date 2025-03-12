@@ -119,8 +119,8 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 			return fmt.Errorf("apply database changes: %w", err)
 		}
 	}
-	if s.lastFlushedBlock == nil {
-		s.lastFlushedBlock = &data.Clock.Number
+	if s.lastAppliedBlockNum == nil {
+		s.lastAppliedBlockNum = &data.Clock.Number
 	}
 
 	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && data.Clock.Number-*s.lastFlushedBlock >= s.batchBlockModulo(isLive)
