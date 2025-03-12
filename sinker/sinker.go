@@ -27,7 +27,8 @@ type SQLSinker struct {
 	logger *zap.Logger
 	tracer logging.Tracer
 
-	stats *Stats
+	stats           	*Stats
+	lastAppliedBlockNum 	*uint64
 }
 
 func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer) (*SQLSinker, error) {
@@ -40,6 +41,7 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 		tracer: tracer,
 
 		stats: NewStats(logger),
+		lastFlushedBlock: nil,
 	}, nil
 }
 
@@ -117,13 +119,19 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 			return fmt.Errorf("apply database changes: %w", err)
 		}
 	}
+	if s.lastAppliedBlockNum == nil {
+		s.lastAppliedBlockNum = &data.Clock.Number
+	}
 
-	if (s.batchBlockModulo(isLive) > 0 && data.Clock.Number%s.batchBlockModulo(isLive) == 0) || s.loader.FlushNeeded() {
+	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && data.Clock.Number-*s.lastFlushedBlock >= s.batchBlockModulo(isLive)
+	rowFlushNeeded := s.loader.FlushNeeded()
+	if blockFlushNeeded || rowFlushNeeded {
 		s.logger.Debug("flushing to database",
 			zap.Stringer("block", cursor.Block()),
+			zap.Uint64("last_flushed_block", *s.lastFlushedBlock),
 			zap.Bool("is_live", *isLive),
-			zap.Bool("block_flush_interval_reached", s.batchBlockModulo(isLive) > 0 && data.Clock.Number%s.batchBlockModulo(isLive) == 0),
-			zap.Bool("row_flush_interval_reached", s.loader.FlushNeeded()),
+			zap.Bool("block_flush_interval_reached", blockFlushNeeded),
+			zap.Bool("row_flush_interval_reached", rowFlushNeeded),
 		)
 
 		flushStart := time.Now()
@@ -148,6 +156,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 
 		s.stats.RecordBlock(cursor.Block())
 		s.stats.RecordFlushDuration(flushDuration)
+		s.lastFlushedBlock = &data.Clock.Number
 	}
 
 	return nil
