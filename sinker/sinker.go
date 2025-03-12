@@ -28,7 +28,7 @@ type SQLSinker struct {
 	tracer logging.Tracer
 
 	stats           	*Stats
-	lastFlushedBlock 	*uint64
+	lastAppliedBlockNum 	*uint64
 }
 
 func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer) (*SQLSinker, error) {
