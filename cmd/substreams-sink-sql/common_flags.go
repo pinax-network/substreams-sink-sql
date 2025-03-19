@@ -61,11 +61,12 @@ func newDBLoader(
 	batchRowFlushInterval int,
 	liveBlockFlushInterval int,
 	handleReorgs bool,
+	clickhouseCluster string,
 ) (*db.Loader, error) {
 	moduleMismatchMode, err := db.ParseOnModuleHashMismatch(sflags.MustGetString(cmd, onModuleHashMistmatchFlag))
 	cli.NoError(err, "invalid mistmatch mode")
 
-	dbLoader, err := db.NewLoader(psqlDSN, batchBlockFlushInterval, batchRowFlushInterval, liveBlockFlushInterval, moduleMismatchMode, &handleReorgs, zlog, tracer)
+	dbLoader, err := db.NewLoader(psqlDSN, batchBlockFlushInterval, batchRowFlushInterval, liveBlockFlushInterval, clickhouseCluster, moduleMismatchMode, &handleReorgs, zlog, tracer)
 	if err != nil {
 		return nil, fmt.Errorf("new psql loader: %w", err)
 	}
@@ -95,6 +96,7 @@ func AddCommonSinkerFlags(flags *pflag.FlagSet) {
 		- If 'ignore' is set, we pick the cursor at the highest block number and use it as the starting point. Subsequent
 		updates to the cursor will overwrite the module hash in the database.
 	`))
+	flags.String("clickhouse-cluster", "", "If set this will apply 'ON CLUSTER <cluster>' when setting up tables in Clickhouse. It will also replace the table engine with it's replicated counterpart (MergeTree will be replaced with ReplicatedMergeTree for example).")
 }
 
 func readBlockRangeArgument(in string) (blockRange *bstream.Range, err error) {

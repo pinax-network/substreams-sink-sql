@@ -5,6 +5,7 @@ go 1.22
 toolchain go1.22.9
 
 require (
+	github.com/AfterShip/clickhouse-sql-parser v0.4.4
 	github.com/ClickHouse/clickhouse-go/v2 v2.25.0
 	github.com/bobg/go-generics/v2 v2.2.2
 	github.com/drone/envsubst v1.0.3

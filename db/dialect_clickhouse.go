@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	clickhouse "github.com/AfterShip/clickhouse-sql-parser/parser"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/streamingfast/cli"
 	sink "github.com/streamingfast/substreams-sink"
@@ -85,17 +86,25 @@ func (d clickhouseDialect) Revert(tx Tx, ctx context.Context, l *Loader, lastVal
 	return fmt.Errorf("clickhouse driver does not support reorg management.")
 }
 
-func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile bool) string {
+func (d clickhouseDialect) GetCreateCursorQuery(l *Loader, withPostgraphile bool) string {
 	_ = withPostgraphile // TODO: see if this can work
+
+	clusterClause := ""
+	engine := "ReplacingMergeTree()"
+	if l.clickhouseCluster != "" {
+		clusterClause = fmt.Sprintf(" ON CLUSTER %s", EscapeIdentifier(l.clickhouseCluster))
+		engine = "ReplicatedReplacingMergeTree()"
+	}
+
 	return fmt.Sprintf(cli.Dedent(`
-	CREATE TABLE IF NOT EXISTS %s.%s
+	CREATE TABLE IF NOT EXISTS %s.%s %s
 	(
     id         String,
 		cursor     String,
 		block_num  Int64,
 		block_id   String
-	) Engine = ReplacingMergeTree() ORDER BY id;
-	`), EscapeIdentifier(schema), EscapeIdentifier(CURSORS_TABLE))
+	) Engine = %s ORDER BY id;
+	`), EscapeIdentifier(l.schema), EscapeIdentifier(CURSORS_TABLE), clusterClause, engine)
 }
 
 func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile bool) string {
@@ -103,11 +112,28 @@ func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile
 }
 
 func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, schemaSql string) error {
-	for _, query := range strings.Split(schemaSql, ";") {
-		if len(strings.TrimSpace(query)) == 0 {
-			continue
+
+	stmts, err := clickhouse.NewParser(schemaSql).ParseStmts()
+	if err != nil {
+		return fmt.Errorf("parsing schema: %w", err)
+	}
+
+	for _, stmt := range stmts {
+		if createTable, ok := stmt.(*clickhouse.CreateTable); ok {
+			if l.clickhouseCluster != "" {
+				l.logger.Info("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", l.clickhouseCluster), zap.String("table", createTable.Name.String()))
+				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: l.clickhouseCluster}}
+
+				if !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
+					strings.HasSuffix(createTable.Engine.Name, "MergeTree") {
+					newEngine := "Replicated" + createTable.Engine.Name
+					createTable.Engine.Name = newEngine
+					l.logger.Info("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
+				}
+			}
 		}
-		if _, err := l.ExecContext(ctx, query); err != nil {
+
+		if _, err := l.ExecContext(ctx, stmt.String()); err != nil {
 			return fmt.Errorf("exec schema: %w", err)
 		}
 	}
