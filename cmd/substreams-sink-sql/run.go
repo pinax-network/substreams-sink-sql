@@ -93,7 +93,7 @@ func sinkRunE(cmd *cobra.Command, args []string) error {
 		batchBlockFlushInterval = sflags.MustGetInt(cmd, "flush-interval")
 	}
 
-	dbLoader, err := newDBLoader(cmd, dsn, batchBlockFlushInterval, sflags.MustGetInt(cmd, "batch-row-flush-interval"), sflags.MustGetInt(cmd, "live-block-flush-interval"), handleReorgs, "")
+	dbLoader, err := newDBLoader(cmd, dsn, batchBlockFlushInterval, sflags.MustGetInt(cmd, "batch-row-flush-interval"), sflags.MustGetInt(cmd, "live-block-flush-interval"), handleReorgs)
 	if err != nil {
 		return fmt.Errorf("new db loader: %w", err)
 	}

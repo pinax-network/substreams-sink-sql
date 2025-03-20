@@ -86,13 +86,13 @@ func (d clickhouseDialect) Revert(tx Tx, ctx context.Context, l *Loader, lastVal
 	return fmt.Errorf("clickhouse driver does not support reorg management.")
 }
 
-func (d clickhouseDialect) GetCreateCursorQuery(l *Loader, withPostgraphile bool) string {
+func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile bool) string {
 	_ = withPostgraphile // TODO: see if this can work
 
 	clusterClause := ""
 	engine := "ReplacingMergeTree()"
-	if l.clickhouseCluster != "" {
-		clusterClause = fmt.Sprintf(" ON CLUSTER %s", EscapeIdentifier(l.clickhouseCluster))
+	if CLICKHOUSE_CLUSTER != "" {
+		clusterClause = fmt.Sprintf(" ON CLUSTER %s", EscapeIdentifier(CLICKHOUSE_CLUSTER))
 		engine = "ReplicatedReplacingMergeTree()"
 	}
 
@@ -104,7 +104,7 @@ func (d clickhouseDialect) GetCreateCursorQuery(l *Loader, withPostgraphile bool
 		block_num  Int64,
 		block_id   String
 	) Engine = %s ORDER BY id;
-	`), EscapeIdentifier(l.schema), EscapeIdentifier(CURSORS_TABLE), clusterClause, engine)
+	`), EscapeIdentifier(schema), EscapeIdentifier(CURSORS_TABLE), clusterClause, engine)
 }
 
 func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile bool) string {
@@ -120,9 +120,9 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 
 	for _, stmt := range stmts {
 		if createTable, ok := stmt.(*clickhouse.CreateTable); ok {
-			if l.clickhouseCluster != "" {
-				l.logger.Info("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", l.clickhouseCluster), zap.String("table", createTable.Name.String()))
-				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: l.clickhouseCluster}}
+			if CLICKHOUSE_CLUSTER != "" {
+				l.logger.Info("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
+				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 
 				if !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
 					strings.HasSuffix(createTable.Engine.Name, "MergeTree") {

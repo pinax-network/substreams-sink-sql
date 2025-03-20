@@ -13,6 +13,7 @@ import (
 
 var CURSORS_TABLE = "cursors"
 var HISTORY_TABLE = "substreams_history"
+var CLICKHOUSE_CLUSTER = ""
 
 // Make the typing a bit easier
 type OrderedMap[K comparable, V any] struct {
@@ -30,13 +31,12 @@ type SystemTableError struct {
 type Loader struct {
 	*sql.DB
 
-	database          string
-	schema            string
-	entries           *OrderedMap[string, *OrderedMap[string, *Operation]]
-	entriesCount      uint64
-	tables            map[string]*TableInfo
-	cursorTable       *TableInfo
-	clickhouseCluster string
+	database     string
+	schema       string
+	entries      *OrderedMap[string, *OrderedMap[string, *Operation]]
+	entriesCount uint64
+	tables       map[string]*TableInfo
+	cursorTable  *TableInfo
 
 	handleReorgs            bool
 	batchBlockFlushInterval int
@@ -55,7 +55,6 @@ func NewLoader(
 	batchBlockFlushInterval int,
 	batchRowFlushInterval int,
 	liveBlockFlushInterval int,
-	clickhouseCluster string,
 	moduleMismatchMode OnModuleHashMismatch,
 	handleReorgs *bool,
 	logger *zap.Logger,
@@ -80,7 +79,6 @@ func NewLoader(
 		batchBlockFlushInterval: batchBlockFlushInterval,
 		batchRowFlushInterval:   batchRowFlushInterval,
 		liveBlockFlushInterval:  liveBlockFlushInterval,
-		clickhouseCluster:       clickhouseCluster,
 		moduleMismatchMode:      moduleMismatchMode,
 		logger:                  logger,
 		tracer:                  tracer,
@@ -112,7 +110,6 @@ func NewLoader(
 		zap.Stringer("password", obfuscatedString(dsn.password)),
 		zap.String("host", dsn.host),
 		zap.Int64("port", dsn.port),
-		zap.String("clickhouse_cluster", clickhouseCluster),
 		zap.Stringer("on_module_hash_mismatch", moduleMismatchMode),
 		zap.Bool("handle_reorgs", l.handleReorgs),
 		zap.String("dialect", fmt.Sprintf("%t", l.getDialect())),
@@ -327,7 +324,7 @@ func (l *Loader) Setup(ctx context.Context, schemaSql string, withPostgraphile b
 }
 
 func (l *Loader) setupCursorTable(ctx context.Context, withPostgraphile bool) error {
-	query := l.getDialect().GetCreateCursorQuery(l, withPostgraphile)
+	query := l.getDialect().GetCreateCursorQuery(l.schema, withPostgraphile)
 	_, err := l.ExecContext(ctx, query)
 	return err
 }
