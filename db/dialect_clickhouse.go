@@ -113,14 +113,14 @@ func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile
 
 func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, schemaSql string) error {
 
-	stmts, err := clickhouse.NewParser(schemaSql).ParseStmts()
-	if err != nil {
-		return fmt.Errorf("parsing schema: %w", err)
-	}
+	if CLICKHOUSE_CLUSTER != "" {
+		stmts, err := clickhouse.NewParser(schemaSql).ParseStmts()
+		if err != nil {
+			return fmt.Errorf("parsing schema: %w", err)
+		}
 
-	for _, stmt := range stmts {
-		if createTable, ok := stmt.(*clickhouse.CreateTable); ok {
-			if CLICKHOUSE_CLUSTER != "" {
+		for _, stmt := range stmts {
+			if createTable, ok := stmt.(*clickhouse.CreateTable); ok {
 				l.logger.Info("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
 				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 
@@ -131,12 +131,22 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 					l.logger.Info("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
 				}
 			}
-		}
 
-		if _, err := l.ExecContext(ctx, stmt.String()); err != nil {
-			return fmt.Errorf("exec schema: %w", err)
+			if _, err := l.ExecContext(ctx, stmt.String()); err != nil {
+				return fmt.Errorf("exec schema: %w", err)
+			}
+		}
+	} else {
+		for _, query := range strings.Split(schemaSql, ";") {
+			if len(strings.TrimSpace(query)) == 0 {
+				continue
+			}
+			if _, err := l.ExecContext(ctx, query); err != nil {
+				return fmt.Errorf("exec schema: %w", err)
+			}
 		}
 	}
+
 	return nil
 }
 
