@@ -92,12 +92,12 @@ func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile 
 	clusterClause := ""
 	engine := "ReplacingMergeTree()"
 	if CLICKHOUSE_CLUSTER != "" {
-		clusterClause = fmt.Sprintf(" ON CLUSTER %s", EscapeIdentifier(CLICKHOUSE_CLUSTER))
+		clusterClause = fmt.Sprintf("ON CLUSTER %s", EscapeIdentifier(CLICKHOUSE_CLUSTER))
 		engine = "ReplicatedReplacingMergeTree()"
 	}
 
 	return fmt.Sprintf(cli.Dedent(`
-	CREATE TABLE IF NOT EXISTS %s.%s %s
+	CREATE TABLE IF NOT EXISTS %s.%s %s 
 	(
     id         String,
 		cursor     String,
@@ -179,7 +179,12 @@ func (d clickhouseDialect) AllowPkDuplicates() bool {
 func (d clickhouseDialect) CreateUser(tx Tx, ctx context.Context, l *Loader, username string, password string, _database string, readOnly bool) error {
 	user, pass := EscapeIdentifier(username), escapeStringValue(password)
 
-	createUserQ := fmt.Sprintf("CREATE USER IF NOT EXISTS %s IDENTIFIED WITH plaintext_password BY %s;", user, pass)
+	onClusterClause := ""
+	if CLICKHOUSE_CLUSTER != "" {
+		onClusterClause = fmt.Sprintf("ON CLUSTER %s", EscapeIdentifier(CLICKHOUSE_CLUSTER))
+	}
+
+	createUserQ := fmt.Sprintf("CREATE USER IF NOT EXISTS %s %s IDENTIFIED WITH plaintext_password BY %s;", user, onClusterClause, pass)
 	_, err := tx.ExecContext(ctx, createUserQ)
 	if err != nil {
 		return fmt.Errorf("executing query %q: %w", createUserQ, err)
@@ -188,12 +193,12 @@ func (d clickhouseDialect) CreateUser(tx Tx, ctx context.Context, l *Loader, use
 	var grantQ string
 	if readOnly {
 		grantQ = fmt.Sprintf(`
-            GRANT SELECT ON *.* TO %s;
-        `, user)
+            GRANT %s SELECT ON *.* TO %s;
+        `, onClusterClause, user)
 	} else {
 		grantQ = fmt.Sprintf(`
-            GRANT ALL ON *.* TO %s;
-        `, user)
+            GRANT %s ALL ON *.* TO %s;
+        `, onClusterClause, user)
 	}
 
 	_, err = tx.ExecContext(ctx, grantQ)
