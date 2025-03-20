@@ -27,8 +27,8 @@ type SQLSinker struct {
 	logger *zap.Logger
 	tracer logging.Tracer
 
-	stats           	*Stats
-	lastAppliedBlockNum 	*uint64
+	stats               *Stats
+	lastAppliedBlockNum *uint64
 }
 
 func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer) (*SQLSinker, error) {
@@ -219,7 +219,6 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 	}
 	return nil
 }
-
 
 func (s *SQLSinker) HandleBlockRangeCompletion(ctx context.Context, cursor *sink.Cursor) error {
 
