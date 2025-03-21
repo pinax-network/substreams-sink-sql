@@ -49,7 +49,7 @@ func (d clickhouseDialect) Flush(tx Tx, ctx context.Context, l *Loader, outputMo
 			strings.Join(columns, ","))
 		batch, err := tx.Prepare(query)
 		if err != nil {
-			return entryCount, fmt.Errorf("failed to prepare insert into %q: %w", tableName, err)
+			return entryCount, fmt.Errorf("failed to prepare insert into %q (query: %s): %w", tableName, query, err)
 		}
 		for entryPair := entries.Oldest(); entryPair != nil; entryPair = entryPair.Next() {
 			entry := entryPair.Value
@@ -68,7 +68,7 @@ func (d clickhouseDialect) Flush(tx Tx, ctx context.Context, l *Loader, outputMo
 			}
 
 			if _, err := batch.ExecContext(ctx, values...); err != nil {
-				return entryCount, fmt.Errorf("executing for entry %q: %w", values, err)
+				return entryCount, fmt.Errorf("failed to execute insert into %q (values: %q): %w", tableName, values, err)
 			}
 		}
 
