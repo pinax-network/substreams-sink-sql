@@ -121,14 +121,14 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 
 		for _, stmt := range stmts {
 			if createTable, ok := stmt.(*clickhouse.CreateTable); ok {
-				l.logger.Info("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
+				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
 				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 
 				if !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
 					strings.HasSuffix(createTable.Engine.Name, "MergeTree") {
 					newEngine := "Replicated" + createTable.Engine.Name
+					l.logger.Debug("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
 					createTable.Engine.Name = newEngine
-					l.logger.Info("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
 				}
 			}
 
