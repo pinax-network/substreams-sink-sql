@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Fixed a bug with not flushing rows on stream completion.
 
+* Improved Clickhouse error messaging.
+
 ## v4.5.0
 
 * Added more flags to configure flushing intervals.
