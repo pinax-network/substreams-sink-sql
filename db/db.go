@@ -13,6 +13,7 @@ import (
 
 var CURSORS_TABLE = "cursors"
 var HISTORY_TABLE = "substreams_history"
+var CLICKHOUSE_CLUSTER = ""
 
 // Make the typing a bit easier
 type OrderedMap[K comparable, V any] struct {

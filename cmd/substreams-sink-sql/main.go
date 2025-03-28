@@ -36,6 +36,7 @@ func main() {
 			flags.String("pprof-listen-addr", "localhost:6060", "[Operator] If non-empty, the process will listen on this address for pprof analysis (see https://golang.org/pkg/net/http/pprof/)")
 			flags.String("cursors-table", "cursors", "[Operator] Name of the table to use for storing cursors")
 			flags.String("history-table", "substreams_history", "[Operator] Name of the table to use for storing block history, used to handle reorgs")
+			flags.String("clickhouse-cluster", "", "[Operator] If non-empty, a 'ON CLUSTER <cluster>' clause will be applied when setting up tables in Clickhouse. It will also replace the table engine with it's replicated counterpart (MergeTree will be replaced with ReplicatedMergeTree for example).")
 		}),
 		AfterAllHook(func(cmd *cobra.Command) {
 			cmd.PersistentPreRun = preStart
@@ -47,6 +48,7 @@ func preStart(cmd *cobra.Command, _ []string) {
 
 	db.CURSORS_TABLE = sflags.MustGetString(cmd, "cursors-table")
 	db.HISTORY_TABLE = sflags.MustGetString(cmd, "history-table")
+	db.CLICKHOUSE_CLUSTER = sflags.MustGetString(cmd, "clickhouse-cluster")
 
 	delay := sflags.MustGetDuration(cmd, "delay-before-start")
 	if delay > 0 {

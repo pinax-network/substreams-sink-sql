@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	clickhouse "github.com/AfterShip/clickhouse-sql-parser/parser"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/streamingfast/cli"
 	sink "github.com/streamingfast/substreams-sink"
@@ -87,15 +88,23 @@ func (d clickhouseDialect) Revert(tx Tx, ctx context.Context, l *Loader, lastVal
 
 func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile bool) string {
 	_ = withPostgraphile // TODO: see if this can work
+
+	clusterClause := ""
+	engine := "ReplacingMergeTree()"
+	if CLICKHOUSE_CLUSTER != "" {
+		clusterClause = fmt.Sprintf("ON CLUSTER %s", EscapeIdentifier(CLICKHOUSE_CLUSTER))
+		engine = "ReplicatedReplacingMergeTree()"
+	}
+
 	return fmt.Sprintf(cli.Dedent(`
-	CREATE TABLE IF NOT EXISTS %s.%s
+	CREATE TABLE IF NOT EXISTS %s.%s %s 
 	(
     id         String,
 		cursor     String,
 		block_num  Int64,
 		block_id   String
-	) Engine = ReplacingMergeTree() ORDER BY id;
-	`), EscapeIdentifier(schema), EscapeIdentifier(CURSORS_TABLE))
+	) Engine = %s ORDER BY id;
+	`), EscapeIdentifier(schema), EscapeIdentifier(CURSORS_TABLE), clusterClause, engine)
 }
 
 func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile bool) string {
@@ -103,14 +112,41 @@ func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile
 }
 
 func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, schemaSql string) error {
-	for _, query := range strings.Split(schemaSql, ";") {
-		if len(strings.TrimSpace(query)) == 0 {
-			continue
+
+	if CLICKHOUSE_CLUSTER != "" {
+		stmts, err := clickhouse.NewParser(schemaSql).ParseStmts()
+		if err != nil {
+			return fmt.Errorf("parsing schema: %w", err)
 		}
-		if _, err := l.ExecContext(ctx, query); err != nil {
-			return fmt.Errorf("exec schema: %w", err)
+
+		for _, stmt := range stmts {
+			if createTable, ok := stmt.(*clickhouse.CreateTable); ok {
+				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
+				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
+
+				if !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
+					strings.HasSuffix(createTable.Engine.Name, "MergeTree") {
+					newEngine := "Replicated" + createTable.Engine.Name
+					l.logger.Debug("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
+					createTable.Engine.Name = newEngine
+				}
+			}
+
+			if _, err := l.ExecContext(ctx, stmt.String()); err != nil {
+				return fmt.Errorf("exec schema: %w", err)
+			}
+		}
+	} else {
+		for _, query := range strings.Split(schemaSql, ";") {
+			if len(strings.TrimSpace(query)) == 0 {
+				continue
+			}
+			if _, err := l.ExecContext(ctx, query); err != nil {
+				return fmt.Errorf("exec schema: %w", err)
+			}
 		}
 	}
+
 	return nil
 }
 
@@ -143,7 +179,12 @@ func (d clickhouseDialect) AllowPkDuplicates() bool {
 func (d clickhouseDialect) CreateUser(tx Tx, ctx context.Context, l *Loader, username string, password string, _database string, readOnly bool) error {
 	user, pass := EscapeIdentifier(username), escapeStringValue(password)
 
-	createUserQ := fmt.Sprintf("CREATE USER IF NOT EXISTS %s IDENTIFIED WITH plaintext_password BY %s;", user, pass)
+	onClusterClause := ""
+	if CLICKHOUSE_CLUSTER != "" {
+		onClusterClause = fmt.Sprintf("ON CLUSTER %s", EscapeIdentifier(CLICKHOUSE_CLUSTER))
+	}
+
+	createUserQ := fmt.Sprintf("CREATE USER IF NOT EXISTS %s %s IDENTIFIED WITH plaintext_password BY %s;", user, onClusterClause, pass)
 	_, err := tx.ExecContext(ctx, createUserQ)
 	if err != nil {
 		return fmt.Errorf("executing query %q: %w", createUserQ, err)
@@ -152,12 +193,12 @@ func (d clickhouseDialect) CreateUser(tx Tx, ctx context.Context, l *Loader, use
 	var grantQ string
 	if readOnly {
 		grantQ = fmt.Sprintf(`
-            GRANT SELECT ON *.* TO %s;
-        `, user)
+            GRANT %s SELECT ON *.* TO %s;
+        `, onClusterClause, user)
 	} else {
 		grantQ = fmt.Sprintf(`
-            GRANT ALL ON *.* TO %s;
-        `, user)
+            GRANT %s ALL ON *.* TO %s;
+        `, onClusterClause, user)
 	}
 
 	_, err = tx.ExecContext(ctx, grantQ)
