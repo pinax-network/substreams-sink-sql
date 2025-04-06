@@ -8,3 +8,4 @@ devel/data*
 build/
 *.spkg
 /substreams-sink-sql
+docker/data
