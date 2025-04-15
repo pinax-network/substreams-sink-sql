@@ -21,18 +21,17 @@ services:
       timeout: 3s
       retries: 10
 
-  clickhouse-ui:
-    image: spoonest/clickhouse-tabix-web-client
-    container_name: clickhouse-ui
-    ports:
-      - "8080:80"
-    environment:
-      - CH_HOST=clickhouse
-      - CH_PORT=8123
-      - CH_USER=default
-      - CH_PASSWORD=default
-      - CH_DB=default
-    depends_on:
-      - clickhouse
+  # clickhouse-ui:
+  #   image: spoonest/clickhouse-tabix-web-client
+  #   container_name: clickhouse-ui
+  #   ports:
+  #     - "8080:80"
+  #   environment:
+  #     - CH_HOST=clickhouse
+  #     - CH_PORT=8123
+  #     - CH_USER=default
+  #     - CH_PASSWORD=default
+  #     - CH_DB=default
+  #   depends_on:
+  #     - clickhouse
 
-# No need for named volumes anymore since we're using a local directory
