@@ -94,6 +94,9 @@ The DSN format for Clickhouse is:
 clickhouse://<user>:<password>@<host>:<port>/<dbname>[?<options>]
 ```
 
+> [!IMPORTANT]
+> You are using Clickhouse Cloud? Add `?secure=true` option to your DSN otherwise you will receive weird error like `setup: exec schema: exec schema: read: EOF`. Here a DSN example for Clickhouse Cloud `clickhouse://default:<password>@<instance-id>.clickhouse.cloud:9440/default?secure=true`.
+
 #### PostgreSQL
 
 The DSN format for Postgres is:
