@@ -78,8 +78,8 @@ github.com/ClickHouse/ch-go v0.65.1/go.mod h1:bsodgURwmrkvkBe5jw1qnGDgyITsYErfON
 github.com/Masterminds/semver/v3 v3.1.1/go.mod h1:VPu/7SZ7ePZ3QOrcuXROw5FAcLl4a0cBrbBpGY/8hQs=
 github.com/RoaringBitmap/roaring v1.9.1 h1:LXcSqGGGMKm+KAzUyWn7ZeREqoOkoMX+KwLOK1thc4I=
 github.com/RoaringBitmap/roaring v1.9.1/go.mod h1:6AXUsoIEzDTFFQCe1RbGA6uFONMhvejWj5rqITANK90=
-github.com/YaroShkvorets/clickhouse-go/v2 v2.25.0-sink-sql h1:gm+RXIFwbXCj1+IPHN+v+c8ULqlN7QEuvN4VJHANoqY=
-github.com/YaroShkvorets/clickhouse-go/v2 v2.25.0-sink-sql/go.mod h1:Wux96YG0qcAfY3vwbBzkuo882xT9KYaWJFWWPRoziDU=
+github.com/YaroShkvorets/clickhouse-go/v2 v2.26.0-sink-sql h1:alid21AZWOrth0lDDpza/rpGgDNCF+9PezxpxiyUwSw=
+github.com/YaroShkvorets/clickhouse-go/v2 v2.26.0-sink-sql/go.mod h1:Wux96YG0qcAfY3vwbBzkuo882xT9KYaWJFWWPRoziDU=
 github.com/alecthomas/gometalinter v2.0.11+incompatible/go.mod h1:qfIpQGGz3d+NmgyPBqv+LSh50emm1pt72EtcX2vKYQk=
 github.com/alecthomas/participle v0.7.1 h1:2bN7reTw//5f0cugJcTOnY/NYZcWQOaajW+BwZB5xWs=
 github.com/alecthomas/participle v0.7.1/go.mod h1:HfdmEuwvr12HXQN44HPWXR0lHmVolVYe4dyL6lQ3duY=
