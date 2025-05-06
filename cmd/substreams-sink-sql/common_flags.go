@@ -2,20 +2,17 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
+	"github.com/golang/protobuf/proto"
 	"github.com/spf13/pflag"
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/cli"
-	"github.com/streamingfast/cli/sflags"
 	"github.com/streamingfast/shutter"
 	sink "github.com/streamingfast/substreams-sink"
-	"github.com/streamingfast/substreams-sink-sql/db"
-	pbsql "github.com/streamingfast/substreams-sink-sql/pb/sf/substreams/sink/sql/v1"
+	pbsql "github.com/streamingfast/substreams-sink-sql/pb/sf/substreams/sink/sql/services/v1"
 	pbsubstreams "github.com/streamingfast/substreams/pb/sf/substreams/v1"
 	"go.uber.org/zap"
 )
@@ -27,61 +24,33 @@ var (
 var supportedOutputTypes = "sf.substreams.sink.database.v1.DatabaseChanges,sf.substreams.database.v1.DatabaseChanges"
 
 var (
-	supportedDeployableUnits   []string
-	supportedDeployableService = "sf.substreams.sink.sql.v1.Service"
+	supportedDeployableUnits              []string
+	deprecated_supportedDeployableService = "sf.substreams.sink.sql.v1.Service"
+	supportedDeployableService            = "sf.substreams.sink.sql.service.v1.Service"
 )
 
 func init() {
 	supportedDeployableUnits = []string{
-		supportedDeployableService,
+		deprecated_supportedDeployableService,
 	}
 }
 
-func extractSinkConfig(pkg *pbsubstreams.Package) (*pbsql.Service, error) {
+func extractSinkService(pkg *pbsubstreams.Package) (*pbsql.Service, error) {
 	if pkg.SinkConfig == nil {
 		return nil, fmt.Errorf("no sink config found in spkg")
 	}
 
 	switch pkg.SinkConfig.TypeUrl {
-	case supportedDeployableService:
+	case deprecated_supportedDeployableService, supportedDeployableService:
 		service := &pbsql.Service{}
-		if err := pkg.SinkConfig.UnmarshalTo(service); err != nil {
+
+		if err := proto.Unmarshal(pkg.SinkConfig.Value, service); err != nil {
 			return nil, fmt.Errorf("failed to proto unmarshal: %w", err)
 		}
 		return service, nil
 	}
 
 	return nil, fmt.Errorf("invalid config type %q, supported configs are %q", pkg.SinkConfig.TypeUrl, strings.Join(supportedDeployableUnits, ", "))
-}
-
-func newDBLoader(
-	cmd *cobra.Command,
-	psqlDSN string,
-	batchBlockFlushInterval int,
-	batchRowFlushInterval int,
-	liveBlockFlushInterval int,
-	handleReorgs bool,
-) (*db.Loader, error) {
-	moduleMismatchMode, err := db.ParseOnModuleHashMismatch(sflags.MustGetString(cmd, onModuleHashMistmatchFlag))
-	cli.NoError(err, "invalid mistmatch mode")
-
-	dbLoader, err := db.NewLoader(psqlDSN, batchBlockFlushInterval, batchRowFlushInterval, liveBlockFlushInterval, moduleMismatchMode, &handleReorgs, zlog, tracer)
-	if err != nil {
-		return nil, fmt.Errorf("new psql loader: %w", err)
-	}
-
-	if err := dbLoader.LoadTables(); err != nil {
-		var e *db.SystemTableError
-		if errors.As(err, &e) {
-			fmt.Printf("Error validating the system table: %s\n", e)
-			fmt.Println("Did you run setup ?")
-			return nil, e
-		}
-
-		return nil, fmt.Errorf("load psql table: %w", err)
-	}
-
-	return dbLoader, nil
 }
 
 // AddCommonSinkerFlags adds the flags common to all command that needs to create a sinker,
@@ -95,6 +64,12 @@ func AddCommonSinkerFlags(flags *pflag.FlagSet) {
 		- If 'ignore' is set, we pick the cursor at the highest block number and use it as the starting point. Subsequent
 		updates to the cursor will overwrite the module hash in the database.
 	`))
+}
+
+func AddCommonDatabaseChangesFlags(flags *pflag.FlagSet) {
+	flags.String("cursors-table", "cursors", "[Operator] Name of the table to use for storing cursors")
+	flags.String("history-table", "substreams_history", "[Operator] Name of the table to use for storing block history, used to handle reorgs")
+	flags.String("clickhouse-cluster", "", "[Operator] If non-empty, a 'ON CLUSTER <cluster>' clause will be applied when setting up tables in Clickhouse. It will also replace the table engine with it's replicated counterpart (MergeTree will be replaced with ReplicatedMergeTree for example).")
 }
 
 func readBlockRangeArgument(in string) (blockRange *bstream.Range, err error) {
