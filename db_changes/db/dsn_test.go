@@ -19,14 +19,14 @@ func TestParseDSN(t *testing.T) {
 		{
 			name:             "golden path",
 			dns:              "psql://postgres:postgres@localhost/substreams-dev?enable_incremental_sort=off&sslmode=disable",
-			expectConnString: "host=localhost port=5432 user=postgres dbname=substreams-dev enable_incremental_sort=off sslmode=disable password=postgres",
+			expectConnString: "host=localhost port=5432 dbname=substreams-dev enable_incremental_sort=off sslmode=disable user=postgres password=postgres",
 			expectSchema:     "public",
 			expectPassword:   "postgres",
 		},
 		{
 			name:             "with schemaName",
 			dns:              "psql://postgres:postgres@localhost/substreams-dev?enable_incremental_sort=off&sslmode=disable&schemaName=foo",
-			expectConnString: "host=localhost port=5432 user=postgres dbname=substreams-dev enable_incremental_sort=off  sslmode=disable password=postgres",
+			expectConnString: "host=localhost port=5432 dbname=substreams-dev enable_incremental_sort=off  sslmode=disable user=postgres password=postgres",
 			expectSchema:     "foo",
 			expectPassword:   "postgres",
 		},
@@ -46,7 +46,7 @@ func TestParseDSN(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		t.Run(test.dns, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			d, err := ParseDSN(test.dns)
 			if test.expectError {
 				require.Error(t, err)
