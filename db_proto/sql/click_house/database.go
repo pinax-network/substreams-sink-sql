@@ -49,7 +49,7 @@ func NewDatabase(
 
 func (d *Database) InsertBlock(blockNum uint64, hash string, timestamp time.Time) error {
 	d.logger.Debug("inserting _block_", zap.Uint64("block_num", blockNum), zap.String("block_hash", hash))
-	err := d.BaseDatabase.Inserter.Insert("blocks", []any{blockNum, hash, timestamp}, d.WrapInsertStatement)
+	err := d.BaseDatabase.Inserter.Insert("_blocks_", []any{blockNum, hash, timestamp}, d.WrapInsertStatement)
 	if err != nil {
 		return fmt.Errorf("inserting block %d: %w", blockNum, err)
 	}

@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
 	sql2 "github.com/streamingfast/substreams-sink-sql/db_proto/sql"
@@ -103,7 +104,17 @@ func (i *AccumulatorInserter) Insert(table string, values []any, txWrapper func(
 }
 
 func (i *AccumulatorInserter) Flush(tx *sql.Tx) error {
+	var accumulators []accumulator
+
 	for _, acc := range i.accumulators {
+		accumulators = append(accumulators, *acc)
+	}
+
+	sort.Slice(accumulators, func(i, j int) bool {
+		return accumulators[i].ordinal < accumulators[j].ordinal
+	})
+
+	for _, acc := range accumulators {
 		if len(acc.rowValues) == 0 {
 			continue
 		}
@@ -121,6 +132,10 @@ func (i *AccumulatorInserter) Flush(tx *sql.Tx) error {
 		if err != nil {
 			return fmt.Errorf("clickhouse accumalator inserter: executing insert %s: %w", insert, err)
 		}
+	}
+
+	//reset
+	for _, acc := range i.accumulators {
 		acc.rowValues = acc.rowValues[:0]
 	}
 
