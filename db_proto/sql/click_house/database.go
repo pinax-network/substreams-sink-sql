@@ -47,7 +47,7 @@ func NewDatabase(
 }
 
 func (d *Database) InsertBlock(blockNum uint64, hash string, timestamp time.Time) error {
-	d.logger.Debug("inserting block", zap.Uint64("block_num", blockNum), zap.String("block_hash", hash))
+	d.logger.Debug("inserting _block_", zap.Uint64("block_num", blockNum), zap.String("block_hash", hash))
 	err := d.BaseDatabase.Inserter.Insert("blocks", []any{blockNum, hash, timestamp}, d.WrapInsertStatement)
 	if err != nil {
 		return fmt.Errorf("inserting block %d: %w", blockNum, err)
@@ -97,7 +97,7 @@ func (d *Database) StoreSinkInfo(schemaName string, schemaHash string) error {
 }
 
 func (d *Database) UpdateSinkInfoHash(schemaName string, newHash string) error {
-	_, err := d.BaseDatabase.Tx.Exec(fmt.Sprintf("UPDATE %s.sink_info SET schema_hash = $1", schemaName), newHash)
+	_, err := d.BaseDatabase.Tx.Exec(fmt.Sprintf("UPDATE %s._sink_info_ SET schema_hash = $1", schemaName), newHash)
 	if err != nil {
 		return fmt.Errorf("updating schema hash: %w", err)
 	}
@@ -168,7 +168,7 @@ func (d *Database) HandleBlocksUndo(lastValidBlockNum uint64) error {
 	for _, table := range tables {
 
 		query := fmt.Sprintf(`DELETE FROM %s WHERE "block_number" > $1`, d.Dialect.FullTableName(table))
-		if table.Name == "blocks" {
+		if table.Name == "_blocks_" {
 			query = fmt.Sprintf(`DELETE FROM %s WHERE "number" > $1`, d.Dialect.FullTableName(table))
 		}
 
