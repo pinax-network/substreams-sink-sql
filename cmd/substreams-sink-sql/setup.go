@@ -19,6 +19,7 @@ var sinkSetupCmd = Command(sinkSetupE,
 	ExactArgs(2),
 	Flags(func(flags *pflag.FlagSet) {
 		AddCommonDatabaseChangesFlags(flags)
+		AddCommonSinkerFlags(flags)
 
 		flags.Bool("postgraphile", false, "Will append the necessary 'comments' on cursors table to fully support postgraphile")
 		flags.Bool("system-tables-only", false, "will only create/update the systems tables (cursors, substreams_history) and ignore the schema from the manifest")
@@ -69,17 +70,6 @@ func sinkSetupE(cmd *cobra.Command, args []string) error {
 
 	if err != nil {
 		return fmt.Errorf("creating loader: %w", err)
-	}
-
-	if err := dbLoader.LoadTables(dsn.Schema(), cursorTableName, historyTableName); err != nil {
-		var e *db2.SystemTableError
-		if errors.As(err, &e) {
-			fmt.Printf("Error validating the system table: %s\n", e)
-			fmt.Println("Did you run setup ?")
-			return e
-		}
-
-		return fmt.Errorf("load psql table: %w", err)
 	}
 
 	userSQLSchema := sinkConfig.Schema
