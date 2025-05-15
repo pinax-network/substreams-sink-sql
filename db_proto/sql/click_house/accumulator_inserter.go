@@ -11,6 +11,7 @@ import (
 )
 
 type accumulator struct {
+	ordinal   int
 	query     string
 	rowValues [][]string
 }
@@ -32,11 +33,13 @@ func NewAccumulatorInserter(database *Database, logger *zap.Logger) (*Accumulato
 			return nil, fmt.Errorf("creating insert from descriptor for table %q: %w", table.Name, err)
 		}
 		accumulators[table.Name] = &accumulator{
-			query: query,
+			ordinal: table.Ordinal,
+			query:   query,
 		}
 	}
 	accumulators["_blocks_"] = &accumulator{
-		query: fmt.Sprintf("INSERT INTO %s (number, hash, timestamp) VALUES ", tableName(database.schemaName, "_blocks_")),
+		ordinal: -1,
+		query:   fmt.Sprintf("INSERT INTO %s (number, hash, timestamp) VALUES ", tableName(database.schemaName, "_blocks_")),
 	}
 
 	//cursorQuery := fmt.Sprintf("INSERT INTO %s (name, cursor) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET cursor = $2", tableName(database.schemaName, "cursor"))
@@ -87,14 +90,6 @@ func createInsertFromDescriptorAcc(table *schema.Table, dialect sql2.Dialect) (s
 
 func (i *AccumulatorInserter) Insert(table string, values []any, txWrapper func(stmt *sql.Stmt) *sql.Stmt) error {
 	var v []string
-	if table == "cursor" {
-		stmt := txWrapper(i.cursorStmt)
-		_, err := stmt.Exec(values...)
-		if err != nil {
-			return fmt.Errorf("executing insert: %w", err)
-		}
-		return nil
-	}
 	for _, value := range values {
 		v = append(v, ValueToString(value))
 	}
