@@ -112,7 +112,6 @@ func (i *AccumulatorInserter) Flush(tx *sql.Tx) error {
 		if len(acc.rowValues) == 0 {
 			continue
 		}
-		insert := acc.query
 		var b strings.Builder
 		b.WriteString(acc.query)
 		for _, values := range acc.rowValues {
@@ -120,13 +119,11 @@ func (i *AccumulatorInserter) Flush(tx *sql.Tx) error {
 			b.WriteString(strings.Join(values, ","))
 			b.WriteString("),")
 		}
-		insert = strings.Trim(b.String(), ",")
+		insert := strings.Trim(b.String(), ",")
 
 		_, err := tx.Exec(insert)
 		if err != nil {
-			fmt.Println(acc.query)
-			fmt.Println(insert)
-			return fmt.Errorf("pg accumalator inserter: executing insert %s: %w", insert, err)
+			return fmt.Errorf("executing insert %s: %w", insert, err)
 		}
 		acc.rowValues = acc.rowValues[:0]
 	}

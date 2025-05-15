@@ -19,6 +19,7 @@ var sinkSetupCmd = Command(sinkSetupE,
 	ExactArgs(2),
 	Flags(func(flags *pflag.FlagSet) {
 		AddCommonDatabaseChangesFlags(flags)
+		AddCommonSinkerFlags(flags)
 
 		flags.Bool("postgraphile", false, "Will append the necessary 'comments' on cursors table to fully support postgraphile")
 		flags.Bool("system-tables-only", false, "will only create/update the systems tables (cursors, substreams_history) and ignore the schema from the manifest")
@@ -71,26 +72,15 @@ func sinkSetupE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating loader: %w", err)
 	}
 
-	if err := dbLoader.LoadTables(dsn.Schema(), cursorTableName, historyTableName); err != nil {
-		var e *db2.SystemTableError
-		if errors.As(err, &e) {
-			fmt.Printf("Error validating the system table: %s\n", e)
-			fmt.Println("Did you run setup ?")
-			return e
-		}
-
-		return fmt.Errorf("load psql table: %w", err)
-	}
-
-	schema := sinkConfig.Schema
+	userSQLSchema := sinkConfig.Schema
 	if systemTableOnly {
-		schema = ""
+		userSQLSchema = ""
 	}
 
-	err = dbLoader.Setup(ctx, schema, sflags.MustGetBool(cmd, "postgraphile"))
+	err = dbLoader.Setup(ctx, dsn.Schema(), userSQLSchema, sflags.MustGetBool(cmd, "postgraphile"))
 	if err != nil {
 		if isDuplicateTableError(err) && ignoreDuplicateTableErrors {
-			zlog.Info("received duplicate table error, script dit not executed succesfully completed")
+			zlog.Info("received duplicate table error, script did not execute successfully")
 		} else {
 			return fmt.Errorf("setup: %w", err)
 		}
