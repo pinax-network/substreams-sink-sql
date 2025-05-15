@@ -31,9 +31,10 @@ func NewDatabase(
 	rootMessageDescriptor *desc.MessageDescriptor,
 	sinkInfoFolder string,
 	cursorFilePath string,
+	useProtoOptions bool,
 	logger *zap.Logger,
 ) (*Database, error) {
-	baseDB, err := sql.NewBaseDatabase(dialect, db, moduleOutputType, rootMessageDescriptor, logger)
+	baseDB, err := sql.NewBaseDatabase(dialect, db, moduleOutputType, rootMessageDescriptor, useProtoOptions, logger)
 	if err != nil {
 		return nil, fmt.Errorf("creating base database: %w", err)
 	}
@@ -166,6 +167,7 @@ func (d *Database) HandleBlocksUndo(lastValidBlockNum uint64) error {
 	}
 
 	for _, table := range tables {
+		d.logger.Info("undoing blocks", zap.String("table", table.Name), zap.Uint64("last_valid_block_num", lastValidBlockNum))
 
 		query := fmt.Sprintf(`DELETE FROM %s WHERE "block_number" > $1`, d.Dialect.FullTableName(table))
 		if table.Name == "_blocks_" {

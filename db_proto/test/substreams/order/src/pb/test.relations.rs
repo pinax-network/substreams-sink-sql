@@ -83,6 +83,14 @@ pub struct Order {
     pub customer_ref_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag="3")]
     pub items: ::prost::alloc::vec::Vec<OrderItem>,
+    #[prost(message, optional, tag="4")]
+    pub extension: ::core::option::Option<OrderExtension>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OrderExtension {
+    #[prost(string, tag="1")]
+    pub description: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
