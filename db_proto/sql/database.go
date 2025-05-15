@@ -181,7 +181,7 @@ func (d *BaseDatabase) WalkMessageDescriptorAndInsert(dm *dynamic.Message, block
 			for _, c := range v {
 				fm, ok := c.(*dynamic.Message)
 				if !ok {
-					panic("expected *dynamic.Message")
+					panic("expected *dynamic.Message wile walking message descriptor " + md.GetFullyQualifiedName() + " field " + fd.GetName() + " value " + fmt.Sprintf("%v", c))
 				}
 				childs = append(childs, fm) //n
 			}
