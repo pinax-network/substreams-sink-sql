@@ -1,7 +1,7 @@
 syntax = "proto3";
 import "google/protobuf/descriptor.proto";
 
-package sf.substreams.sink.sql.schema.v1;
+package schema;
 option go_package = "github.com/streamingfast/substreams-sink-sql/pb/schema";
 
 extend google.protobuf.MessageOptions {
