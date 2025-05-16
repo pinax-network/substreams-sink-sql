@@ -23,7 +23,7 @@ const staticSqlCreateBlock = `
 		hash      text,
 		timestamp timestamp
 	)
-	ENGINE = MergeTree()
+	ENGINE = ReplacingMergeTree()
 	PRIMARY KEY (number)
 `
 

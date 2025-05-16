@@ -13,6 +13,7 @@ import (
 
 type accumulator struct {
 	ordinal   int
+	tableName string
 	query     string
 	rowValues [][]string
 }
@@ -34,8 +35,9 @@ func NewAccumulatorInserter(database *Database, logger *zap.Logger) (*Accumulato
 			return nil, fmt.Errorf("creating insert from descriptor for table %q: %w", table.Name, err)
 		}
 		accumulators[table.Name] = &accumulator{
-			ordinal: table.Ordinal,
-			query:   query,
+			tableName: table.Name,
+			ordinal:   table.Ordinal,
+			query:     query,
 		}
 	}
 	accumulators["_blocks_"] = &accumulator{
@@ -115,6 +117,7 @@ func (i *AccumulatorInserter) Flush(tx *sql.Tx) error {
 	})
 
 	for _, acc := range accumulators {
+		i.logger.Debug("flushing table", zap.String("table", acc.tableName), zap.Int("ordinal", acc.ordinal), zap.Int("row_count", len(acc.rowValues)))
 		if len(acc.rowValues) == 0 {
 			continue
 		}

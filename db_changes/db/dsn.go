@@ -105,6 +105,16 @@ func (c *DSN) Driver() string {
 
 func (c *DSN) ConnString() string {
 	if c.driver == "clickhouse" {
+		for _, option := range c.options {
+			if c.host == "localhost" {
+				c.host = "127.0.0.1"
+				scheme := "http"
+				if option == "secure=true" {
+					scheme = "https"
+				}
+				return strings.Replace(c.original, "clickhouse://", scheme+"://", 1)
+			}
+		}
 		return c.original
 	}
 	out := fmt.Sprintf("host=%s port=%d dbname=%s %s", c.host, c.port, c.database, strings.Join(c.options, " "))
