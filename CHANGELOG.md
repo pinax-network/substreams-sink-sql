@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+* Bumped `github.com/AfterShip/clickhouse-sql-parser` to v0.4.9 to add support for `REFRESH` expressions when creating materialized views.
 * Improved batch block flush logic to flush after a certain number of blocks instead of taking by modulo.
 
 * Fixed cursor loading on Clickhouse.
