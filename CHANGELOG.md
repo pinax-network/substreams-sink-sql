@@ -5,17 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
-* New proto definition base sql sink feature. go run `substreams-sink-sql from-proto`
-  * That feature inspect the protobuf structure of your output module and create database tables and constraints base on new protobuf options then ingest the your module output data.
-  * Protobuf option: https://buf.build/streamingfast/substreams-sink-sql/docs/main:sf.substreams.sink.sql.schema.v1
-  * Only support Postgresql database at this point. 
+## v4.6.0
+
+* Added support for `Upsert` operation in Postgres, Clickhouse isn't supported right now.
 
 * Improved batch block flush logic to flush after a certain number of blocks instead of taking by modulo.
 
 * Fixed cursor loading on Clickhouse.
 
 * Fixed a bug with not flushing rows on stream completion.
+
 * Added `--clickhouse-cluster` flag. If non-empty the sink will apply a `ON CLUSTER <cluster>` clause when setting up tables and replace table engines with their `Replicated` counterparts.
 * Added flushed block number and time drift metrics.
 
