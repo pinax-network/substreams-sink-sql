@@ -32,6 +32,7 @@ var sinkRunCmd = Command(sinkRunE,
 		flags.Int("batch-row-flush-interval", 100_000, "When in catch up mode, flush every N rows or after batch-block-flush-interval, whichever comes first. Set to 0 to disable and only use batch-block-flush-interval. Ineffective if the sink is now in the live portion of the chain where only 'live-block-flush-interval' applies.")
 		flags.Int("live-block-flush-interval", 1, "When processing in live mode, flush every N blocks.")
 		flags.Int("flush-interval", 0, "(deprecated) please use --batch-block-flush-interval instead")
+		flags.String("idle-timeout", "", "Duration to wait without data messages before triggering a reconnect, e.g. '10m', '1h'. Waiting for first block doesn't count as idle.")
 		flags.StringP("endpoint", "e", "", "Specify the substreams endpoint, ex: `mainnet.eth.streamingfast.io:443`")
 	}),
 	Example("substreams-sink-sql run 'postgres://localhost:5432/posgres?sslmode=disable' uniswap-v3@v0.2.10"),
@@ -74,6 +75,16 @@ func sinkRunE(cmd *cobra.Command, args []string) error {
 
 	handleReorgs := sflags.MustGetInt(cmd, "undo-buffer-size") == 0
 
+	idleTimeout := sflags.MustGetString(cmd, "idle-timeout")
+	var idleTimeoutDuration time.Duration
+	if idleTimeout != "" {
+		var err error
+		idleTimeoutDuration, err = time.ParseDuration(idleTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid idle-timeout duration: %w", err)
+		}
+	}
+
 	sink, err := sink.NewFromViper(
 		cmd,
 		supportedOutputTypes,
@@ -83,6 +94,7 @@ func sinkRunE(cmd *cobra.Command, args []string) error {
 		blockRange,
 		zlog,
 		tracer,
+		sink.WithIdleTimeout(idleTimeoutDuration),
 	)
 	if err != nil {
 		return fmt.Errorf("new base sinker: %w", err)
