@@ -178,4 +178,4 @@ replace github.com/jimsmart/schema => github.com/streamingfast/schema v0.0.0-202
 
 replace github.com/ClickHouse/clickhouse-go/v2 => github.com/YaroShkvorets/clickhouse-go/v2 v2.26.0-sink-sql
 
-replace github.com/streamingfast/substreams-sink => github.com/pinax-network/substreams-sink-go v0.5.4-idle-timeout
+replace github.com/streamingfast/substreams-sink => github.com/pinax-network/substreams-sink-go v0.5.6-idle-timeout
