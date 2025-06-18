@@ -11,12 +11,38 @@ import (
 )
 
 func (l *Loader) Flush(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) (rowFlushedCount int, err error) {
-	ctx = clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
-
+	var lastErr error
 	startAt := time.Now()
+
+	for attempt := range l.maxFlushRetries {
+		rowFlushedCount, lastErr = l.attemptFlush(ctx, outputModuleHash, cursor, lastFinalBlock)
+		if lastErr == nil {
+			l.logger.Debug("flushed table(s) rows to database",
+				zap.Int("table_count", l.entries.Len()+1),
+				zap.Int("row_count", rowFlushedCount),
+				zap.Duration("took", time.Since(startAt)),
+			)
+			return rowFlushedCount, nil
+		}
+		l.logger.Warn("Flush attempt failed",
+			zap.Int("attempt", attempt+1),
+			zap.Int("max_retries", l.maxFlushRetries),
+			zap.Error(lastErr),
+		)
+		if attempt < l.maxFlushRetries-1 {
+			time.Sleep(l.sleepBetweenFlushRetries)
+		}
+	}
+
+	return 0, fmt.Errorf("failed to flush after %d attempts: %w", l.maxFlushRetries, lastErr)
+}
+
+// attemptFlush performs a single attempt at flushing data to the database
+func (l *Loader) attemptFlush(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) (rowFlushedCount int, err error) {
+	ctx = clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
 	tx, err := l.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("failed to being db transaction: %w", err)
+		return 0, fmt.Errorf("failed to begin db transaction: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -41,8 +67,6 @@ func (l *Loader) Flush(ctx context.Context, outputModuleHash string, cursor *sin
 	}
 	l.reset()
 
-	// We add + 1 to the table count because the `cursors` table is an implicit table
-	l.logger.Debug("flushed table(s) rows to database", zap.Int("table_count", l.entries.Len()+1), zap.Int("row_count", rowFlushedCount), zap.Duration("took", time.Since(startAt)))
 	return rowFlushedCount, nil
 }
 

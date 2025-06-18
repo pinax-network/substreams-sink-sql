@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
+
 	"github.com/jimsmart/schema"
 	"github.com/streamingfast/logging"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -38,11 +40,13 @@ type Loader struct {
 	tables       map[string]*TableInfo
 	cursorTable  *TableInfo
 
-	handleReorgs            bool
-	batchBlockFlushInterval int
-	batchRowFlushInterval   int
-	liveBlockFlushInterval  int
-	moduleMismatchMode      OnModuleHashMismatch
+	handleReorgs            	bool
+	batchBlockFlushInterval 	int
+	batchRowFlushInterval   	int
+	liveBlockFlushInterval  	int
+	moduleMismatchMode      	OnModuleHashMismatch
+	maxFlushRetries         	int
+	sleepBetweenFlushRetries	time.Duration
 
 	logger *zap.Logger
 	tracer logging.Tracer
@@ -78,6 +82,8 @@ func NewLoader(
 		tables:                  map[string]*TableInfo{},
 		batchBlockFlushInterval: batchBlockFlushInterval,
 		batchRowFlushInterval:   batchRowFlushInterval,
+		maxFlushRetries:         3,
+		sleepBetweenFlushRetries:5 * time.Second,
 		liveBlockFlushInterval:  liveBlockFlushInterval,
 		moduleMismatchMode:      moduleMismatchMode,
 		logger:                  logger,
