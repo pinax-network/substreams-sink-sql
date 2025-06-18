@@ -39,7 +39,7 @@ func (l *Loader) Flush(ctx context.Context, outputModuleHash string, cursor *sin
 
 // attemptFlush performs a single attempt at flushing data to the database
 func (l *Loader) attemptFlush(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) (rowFlushedCount int, err error) {
-	ctx = clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
+	ctx = clickhouse.Context(ctx, clickhouse.WithStdAsync(false))
 	tx, err := l.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin db transaction: %w", err)
