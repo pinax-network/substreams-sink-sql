@@ -61,8 +61,9 @@
             "debugAdapter": "dlv-dap",
             "args": [
                 "setup",
-                "clickhouse://default:default@localhost:9000/default",
-                "https://github.com/pinax-network/substreams-erc20/releases/download/v1.5.0/erc20-clickhouse-v1.5.0.spkg"
+                "clickhouse://default:rtlbYofewjyuW2kD@ch-node881d.riv.eosn.io:9000/denis:solana-dex@v0.2.0",
+                "https://github.com/pinax-network/substreams-solana/releases/download/solana-dex-v0.2.0/solana-dex-v0.2.0.spkg",
+                "--clickhouse-cluster=dev1"
             ]
         },
         {

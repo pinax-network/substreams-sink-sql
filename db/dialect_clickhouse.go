@@ -154,6 +154,10 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE FUNCTION'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("function", createFunction.FunctionName.String()))
 				createFunction.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 			}
+			if alterTable, ok := stmt.(*clickhouse.AlterTable); ok {
+				l.logger.Debug("appending 'ON CLUSTER' clause to 'ALTER TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", alterTable.TableIdentifier.String()))
+				alterTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
+			}
 
 			if _, err := l.ExecContext(ctx, stmt.String()); err != nil {
 				l.logger.Error("failed to execute schema statement", zap.String("statement", stmt.String()), zap.Error(err))
