@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,7 +98,7 @@ func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile 
 	}
 
 	return fmt.Sprintf(cli.Dedent(`
-	CREATE TABLE IF NOT EXISTS %s.%s %s 
+	CREATE TABLE IF NOT EXISTS %s.%s %s
 	(
     id         String,
 		cursor     String,
@@ -128,7 +129,7 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
 				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 
-				if !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
+				if createTable.Engine != nil && !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
 					strings.HasSuffix(createTable.Engine.Name, "MergeTree") {
 					newEngine := "Replicated" + createTable.Engine.Name
 					l.logger.Debug("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
@@ -154,9 +155,15 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE FUNCTION'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("function", createFunction.FunctionName.String()))
 				createFunction.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 			}
+			if alterTable, ok := stmt.(*clickhouse.AlterTable); ok {
+				l.logger.Debug("appending 'ON CLUSTER' clause to 'ALTER TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", alterTable.TableIdentifier.String()))
+				alterTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
+			}
 
-			if _, err := l.ExecContext(ctx, stmt.String()); err != nil {
-				l.logger.Error("failed to execute schema statement", zap.String("statement", stmt.String()), zap.Error(err))
+			stmtStr := fixParserIssues(stmt.String())
+
+			if _, err := l.ExecContext(ctx, stmtStr); err != nil {
+				l.logger.Error("failed to execute schema statement", zap.String("statement", stmtStr), zap.Error(err))
 				return fmt.Errorf("exec schema: %w", err)
 			}
 		}
@@ -172,6 +179,17 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 	}
 
 	return nil
+}
+
+// fixParserIssues fixes parser issues
+func fixParserIssues(sql string) string {
+	// Fix identifier+WHEN issue (like program_idWHEN) in CASE statements
+	// Make sure to capture CASE as well so it's preserved
+	re := regexp.MustCompile(`(CASE.*?)([a-zA-Z0-9_]+)(WHEN\s)`)
+
+	sql = re.ReplaceAllString(sql, "$1$2 $3")
+
+	return sql
 }
 
 func (d clickhouseDialect) GetUpdateCursorQuery(table, moduleHash string, cursor *sink.Cursor, block_num uint64, block_id string) string {

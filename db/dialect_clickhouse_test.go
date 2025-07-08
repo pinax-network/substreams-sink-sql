@@ -2,11 +2,58 @@ package db
 
 import (
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func Test_fixParserIssues(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "No issues",
+			input:    "CASE program_id WHEN 'value' THEN 'result' END",
+			expected: "CASE program_id WHEN 'value' THEN 'result' END",
+		},
+		{
+			name:     "Missing space before WHEN",
+			input:    "CASE program_idWHEN 'value' THEN 'result' END",
+			expected: "CASE program_id WHEN 'value' THEN 'result' END",
+		},
+		{
+			name:     "Multiple missing spaces before WHEN",
+			input:    "CASE program_idWHEN 'value1' THEN 'result1' WHEN 'value2' THEN 'result2' END",
+			expected: "CASE program_id WHEN 'value1' THEN 'result1' WHEN 'value2' THEN 'result2' END",
+		},
+		{
+			name:     "Two CASE statements with issues",
+			input:    "CASE program_idWHEN 'value1' THEN 'result1' END, CASE ammWHEN 'value2' THEN 'result2' END",
+			expected: "CASE program_id WHEN 'value1' THEN 'result1' END, CASE amm WHEN 'value2' THEN 'result2' END",
+		},
+		{
+			name:     "Not in CASE context - should remain unchanged",
+			input:    "CREATE TABLE WITHSOMEWHEN ORDER BY id",
+			expected: "CREATE TABLE WITHSOMEWHEN ORDER BY id",
+		},
+		{
+			name:     "Complex real world example",
+			input:    "CREATE TABLE swaps (block_num UInt32, program_name LowCardinality(String) MATERIALIZED CASE program_idWHEN CAST('abc' AS FixedString(44)) THEN 'Raydium' END, amm_name LowCardinality(String) MATERIALIZED CASE ammWHEN CAST('xyz' AS FixedString(44)) THEN 'Pump.fun' END)",
+			expected: "CREATE TABLE swaps (block_num UInt32, program_name LowCardinality(String) MATERIALIZED CASE program_id WHEN CAST('abc' AS FixedString(44)) THEN 'Raydium' END, amm_name LowCardinality(String) MATERIALIZED CASE amm WHEN CAST('xyz' AS FixedString(44)) THEN 'Pump.fun' END)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := fixParserIssues(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
 
 func Test_convertToType(t *testing.T) {
 
