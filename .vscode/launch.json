@@ -61,7 +61,7 @@
             "debugAdapter": "dlv-dap",
             "args": [
                 "setup",
-                "clickhouse://default:rtlbYofewjyuW2kD@ch-node881d.riv.eosn.io:9000/denis:solana-dex@v0.2.0",
+                "clickhouse://default:rtlbYofewjyuW2kD@ch-node881d.riv.eosn.io:9000/test",
                 "https://github.com/pinax-network/substreams-solana/releases/download/solana-dex-v0.2.0/solana-dex-v0.2.0.spkg",
                 "--clickhouse-cluster=dev1"
             ]

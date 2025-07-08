@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -159,8 +160,10 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 				alterTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 			}
 
-			if _, err := l.ExecContext(ctx, stmt.String()); err != nil {
-				l.logger.Error("failed to execute schema statement", zap.String("statement", stmt.String()), zap.Error(err))
+			stmtStr := fixParserIssues(stmt.String())
+
+			if _, err := l.ExecContext(ctx, stmtStr); err != nil {
+				l.logger.Error("failed to execute schema statement", zap.String("statement", stmtStr), zap.Error(err))
 				return fmt.Errorf("exec schema: %w", err)
 			}
 		}
@@ -176,6 +179,17 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 	}
 
 	return nil
+}
+
+// fixParserIssues fixes parser issues
+func fixParserIssues(sql string) string {
+	// Fix identifier+WHEN issue (like program_idWHEN) in CASE statements
+	// Make sure to capture CASE as well so it's preserved
+	re := regexp.MustCompile(`(CASE.*?)([a-zA-Z0-9_]+)(WHEN\s)`)
+
+	sql = re.ReplaceAllString(sql, "$1$2 $3")
+
+	return sql
 }
 
 func (d clickhouseDialect) GetUpdateCursorQuery(table, moduleHash string, cursor *sink.Cursor, block_num uint64, block_id string) string {
