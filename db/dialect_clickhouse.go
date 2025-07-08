@@ -97,7 +97,7 @@ func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile 
 	}
 
 	return fmt.Sprintf(cli.Dedent(`
-	CREATE TABLE IF NOT EXISTS %s.%s %s 
+	CREATE TABLE IF NOT EXISTS %s.%s %s
 	(
     id         String,
 		cursor     String,
@@ -128,7 +128,7 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
 				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
 
-				if !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
+				if createTable.Engine != nil && !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
 					strings.HasSuffix(createTable.Engine.Name, "MergeTree") {
 					newEngine := "Replicated" + createTable.Engine.Name
 					l.logger.Debug("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
