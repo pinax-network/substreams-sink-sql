@@ -9,48 +9,241 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_fixParserIssues(t *testing.T) {
+func Test_replaceEngineWithReplicated(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected string
 	}{
 		{
-			name:     "No issues",
-			input:    "CASE program_id WHEN 'value' THEN 'result' END",
-			expected: "CASE program_id WHEN 'value' THEN 'result' END",
+			name:     "MergeTree with parameters",
+			input:    "ENGINE = MergeTree()",
+			expected: "ENGINE = ReplicatedMergeTree()",
 		},
 		{
-			name:     "Missing space before WHEN",
-			input:    "CASE program_idWHEN 'value' THEN 'result' END",
-			expected: "CASE program_id WHEN 'value' THEN 'result' END",
+			name:     "MergeTree without parameters",
+			input:    "ENGINE = MergeTree ORDER BY id",
+			expected: "ENGINE = ReplicatedMergeTree ORDER BY id",
 		},
 		{
-			name:     "Multiple missing spaces before WHEN",
-			input:    "CASE program_idWHEN 'value1' THEN 'result1' WHEN 'value2' THEN 'result2' END",
-			expected: "CASE program_id WHEN 'value1' THEN 'result1' WHEN 'value2' THEN 'result2' END",
+			name:     "Full SQL with MergeTree engine with params",
+			input:    "CREATE TABLE mytable (id UInt32) ENGINE = MergeTree() ORDER BY id",
+			expected: "CREATE TABLE mytable (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
 		},
 		{
-			name:     "Two CASE statements with issues",
-			input:    "CASE program_idWHEN 'value1' THEN 'result1' END, CASE ammWHEN 'value2' THEN 'result2' END",
-			expected: "CASE program_id WHEN 'value1' THEN 'result1' END, CASE amm WHEN 'value2' THEN 'result2' END",
+			name:     "SummingMergeTree with parameters",
+			input:    "ENGINE = SummingMergeTree(val)",
+			expected: "ENGINE = ReplicatedSummingMergeTree(val)",
 		},
 		{
-			name:     "Not in CASE context - should remain unchanged",
-			input:    "CREATE TABLE WITHSOMEWHEN ORDER BY id",
-			expected: "CREATE TABLE WITHSOMEWHEN ORDER BY id",
+			name:     "Already Replicated engine",
+			input:    "ENGINE = ReplicatedMergeTree()",
+			expected: "ENGINE = ReplicatedMergeTree()",
 		},
 		{
-			name:     "Complex real world example",
-			input:    "CREATE TABLE swaps (block_num UInt32, program_name LowCardinality(String) MATERIALIZED CASE program_idWHEN CAST('abc' AS FixedString(44)) THEN 'Raydium' END, amm_name LowCardinality(String) MATERIALIZED CASE ammWHEN CAST('xyz' AS FixedString(44)) THEN 'Pump.fun' END)",
-			expected: "CREATE TABLE swaps (block_num UInt32, program_name LowCardinality(String) MATERIALIZED CASE program_id WHEN CAST('abc' AS FixedString(44)) THEN 'Raydium' END, amm_name LowCardinality(String) MATERIALIZED CASE amm WHEN CAST('xyz' AS FixedString(44)) THEN 'Pump.fun' END)",
+			name:     "Case insensitive ENGINE",
+			input:    "engine = MergeTree()",
+			expected: "engine = ReplicatedMergeTree()",
+		},
+		{
+			name:     "Mixed spacing around equals",
+			input:    "ENGINE=MergeTree()",
+			expected: "ENGINE=ReplicatedMergeTree()",
+		},
+		{
+			name:     "Multiple engines in one SQL",
+			input:    "CREATE TABLE t1 ENGINE = MergeTree(); CREATE TABLE t2 ENGINE = SummingMergeTree(val)",
+			expected: "CREATE TABLE t1 ENGINE = ReplicatedMergeTree(); CREATE TABLE t2 ENGINE = ReplicatedSummingMergeTree(val)",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := fixParserIssues(tt.input)
+			result := replaceEngineWithReplicated(tt.input)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func Test_patchClickhouseQuery(t *testing.T) {
+	clusterName := "test_cluster"
+
+	tests := []struct {
+		name             string
+		input            string
+		expectedOutput   string
+		expectedStmtType string
+	}{
+		// CREATE DATABASE tests
+		{
+			name:             "CREATE DATABASE - no cluster",
+			input:            "CREATE DATABASE mydb",
+			expectedOutput:   "CREATE DATABASE IF NOT EXISTS mydb ON CLUSTER \"test_cluster\"",
+			expectedStmtType: "CREATE DATABASE",
+		},
+		{
+			name:             "CREATE DATABASE - with IF NOT EXISTS",
+			input:            "CREATE DATABASE IF NOT EXISTS mydb",
+			expectedOutput:   "CREATE DATABASE IF NOT EXISTS mydb ON CLUSTER \"test_cluster\"",
+			expectedStmtType: "CREATE DATABASE",
+		},
+		{
+			name:             "CREATE SCHEMA",
+			input:            "CREATE SCHEMA my_schema",
+			expectedOutput:   "CREATE SCHEMA IF NOT EXISTS my_schema ON CLUSTER \"test_cluster\"",
+			expectedStmtType: "CREATE DATABASE",
+		},
+		{
+			name:             "CREATE DATABASE - already has cluster",
+			input:            "CREATE DATABASE mydb ON CLUSTER \"other_cluster\"",
+			expectedOutput:   "CREATE DATABASE mydb ON CLUSTER \"other_cluster\"",
+			expectedStmtType: "CREATE DATABASE",
+		},
+
+		// CREATE TABLE tests
+		{
+			name:             "CREATE TABLE - simple",
+			input:            "CREATE TABLE mytable (id UInt32)",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32)",
+			expectedStmtType: "CREATE TABLE",
+		},
+		{
+			name:             "CREATE TABLE with quotes - with IF NOT EXISTS",
+			input:            "CREATE TABLE IF NOT EXISTS 'mytable' (id UInt32)",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS 'mytable' ON CLUSTER \"test_cluster\" (id UInt32)",
+			expectedStmtType: "CREATE TABLE",
+		},
+		{
+			name:             "CREATE TABLE with space in name - with IF NOT EXISTS",
+			input:            "CREATE TABLE IF NOT EXISTS 'my table' (id UInt32)",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS 'my table' ON CLUSTER \"test_cluster\" (id UInt32)",
+			expectedStmtType: "CREATE TABLE",
+		},
+		{
+			name:             "CREATE TABLE - with MergeTree engine with params",
+			input:            "CREATE TABLE mytable (id UInt32) ENGINE = MergeTree() ORDER BY id",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
+			expectedStmtType: "CREATE TABLE",
+		},
+		{
+			name:             "CREATE TABLE - with already Replicated engine",
+			input:            "CREATE TABLE mytable (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
+			expectedStmtType: "CREATE TABLE",
+		},
+		{
+			name:             "CREATE TABLE - with MergeTree engine without params",
+			input:            "CREATE TABLE mytable (id UInt32) ENGINE = MergeTree ORDER BY id",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree ORDER BY id",
+			expectedStmtType: "CREATE TABLE",
+		},
+		{
+			name:             "CREATE TABLE - with SummingMergeTree engine",
+			input:            "CREATE TABLE mytable (id UInt32, val UInt64) ENGINE = SummingMergeTree(val) ORDER BY id",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32, val UInt64) ENGINE = ReplicatedSummingMergeTree(val) ORDER BY id",
+			expectedStmtType: "CREATE TABLE",
+		},
+
+		// CREATE MATERIALIZED VIEW tests
+		{
+			name:             "CREATE MATERIALIZED VIEW - simple",
+			input:            "CREATE MATERIALIZED VIEW myview AS SELECT * FROM mytable",
+			expectedOutput:   "CREATE MATERIALIZED VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
+			expectedStmtType: "CREATE MATERIALIZED VIEW",
+		},
+		{
+			name:             "CREATE MATERIALIZED VIEW - with MergeTree engine",
+			input:            "CREATE MATERIALIZED VIEW myview ENGINE = MergeTree() ORDER BY id AS SELECT id FROM mytable",
+			expectedOutput:   "CREATE MATERIALIZED VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" ENGINE = ReplicatedMergeTree() ORDER BY id AS SELECT id FROM mytable",
+			expectedStmtType: "CREATE MATERIALIZED VIEW",
+		},
+
+		// CREATE VIEW tests
+		{
+			name:             "CREATE VIEW - simple",
+			input:            "CREATE VIEW myview AS SELECT * FROM mytable",
+			expectedOutput:   "CREATE VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
+			expectedStmtType: "CREATE VIEW",
+		},
+
+		// CREATE FUNCTION tests
+		{
+			name:             "CREATE FUNCTION - simple",
+			input:            "CREATE FUNCTION myfunc AS (a, b) -> a + b",
+			expectedOutput:   "CREATE FUNCTION IF NOT EXISTS myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
+			expectedStmtType: "CREATE FUNCTION",
+		},
+		{
+			name:             "CREATE FUNCTION - with quotes",
+			input:            "CREATE FUNCTION \"my func\" AS (a, b) -> a + b",
+			expectedOutput:   "CREATE FUNCTION IF NOT EXISTS \"my func\" ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
+			expectedStmtType: "CREATE FUNCTION",
+		},
+
+		// ALTER TABLE tests
+		{
+			name:             "ALTER TABLE - simple",
+			input:            "ALTER TABLE mytable ADD COLUMN newcol UInt32",
+			expectedOutput:   "ALTER TABLE mytable ON CLUSTER \"test_cluster\" ADD COLUMN newcol UInt32",
+			expectedStmtType: "ALTER TABLE",
+		},
+
+		// Non-matching statement
+		{
+			name:             "Non-matching statement - SELECT",
+			input:            "SELECT * FROM mytable",
+			expectedOutput:   "SELECT * FROM mytable",
+			expectedStmtType: "",
+		},
+		{
+			name:             "Non-matching statement - INSERT",
+			input:            "INSERT INTO mytable VALUES (1, 2, 3)",
+			expectedOutput:   "INSERT INTO mytable VALUES (1, 2, 3)",
+			expectedStmtType: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, stmtType := patchClickhouseQuery(tt.input, clusterName)
+			assert.Equal(t, tt.expectedOutput, output)
+			assert.Equal(t, tt.expectedStmtType, stmtType)
+		})
+	}
+}
+
+func Test_stripSQLComments(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "single line comment",
+			input:    "-- This is a comment\nCREATE TABLE test",
+			expected: "CREATE TABLE test",
+		},
+		{
+			name:     "multi-line comment",
+			input:    "/* ──────────────────────────────\n   comment \n   ───────────────────────────── */\nCREATE TABLE test",
+			expected: "CREATE TABLE test",
+		},
+		{
+			name:     "multi-line comment nested",
+			input:    "/* ─────────────────\n\n────────────────── */\nCREATE TABLE test/* ───────────────────────────*/",
+			expected: "CREATE TABLE test",
+		},
+		{
+			name:     "mixed comments",
+			input:    "-- Header comment\n/* Block comment\nMultiple lines\n*/CREATE TABLE test -- inline comment",
+			expected: "CREATE TABLE test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripSQLComments(tt.input)
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }

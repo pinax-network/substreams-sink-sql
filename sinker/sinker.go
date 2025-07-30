@@ -40,7 +40,7 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 		logger: logger,
 		tracer: tracer,
 
-		stats: NewStats(logger),
+		stats:               NewStats(logger),
 		lastAppliedBlockNum: nil,
 	}, nil
 }

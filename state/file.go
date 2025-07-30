@@ -41,8 +41,6 @@ func NewFileStateStore(
 ) (*FileStateStore, error) {
 	s := &FileState{}
 
-
-
 	content, err := os.ReadFile(outputPath)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -56,7 +54,7 @@ func NewFileStateStore(
 	}
 	outputStore.SetOverwrite(true)
 	f := &FileStateStore{
-		Shutter:        shutter.New(),
+		Shutter:     shutter.New(),
 		outputPath:  outputPath,
 		outputStore: outputStore,
 		state:       s,

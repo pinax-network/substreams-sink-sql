@@ -40,13 +40,13 @@ type Loader struct {
 	tables       map[string]*TableInfo
 	cursorTable  *TableInfo
 
-	handleReorgs            	bool
-	batchBlockFlushInterval 	int
-	batchRowFlushInterval   	int
-	liveBlockFlushInterval  	int
-	moduleMismatchMode      	OnModuleHashMismatch
-	maxFlushRetries         	int
-	sleepBetweenFlushRetries	time.Duration
+	handleReorgs             bool
+	batchBlockFlushInterval  int
+	batchRowFlushInterval    int
+	liveBlockFlushInterval   int
+	moduleMismatchMode       OnModuleHashMismatch
+	maxFlushRetries          int
+	sleepBetweenFlushRetries time.Duration
 
 	logger *zap.Logger
 	tracer logging.Tracer
@@ -75,19 +75,19 @@ func NewLoader(
 	}
 
 	l := &Loader{
-		DB:                      db,
-		database:                dsn.database,
-		schema:                  dsn.schema,
-		entries:                 NewOrderedMap[string, *OrderedMap[string, *Operation]](),
-		tables:                  map[string]*TableInfo{},
-		batchBlockFlushInterval: batchBlockFlushInterval,
-		batchRowFlushInterval:   batchRowFlushInterval,
-		maxFlushRetries:         3,
-		sleepBetweenFlushRetries:5 * time.Second,
-		liveBlockFlushInterval:  liveBlockFlushInterval,
-		moduleMismatchMode:      moduleMismatchMode,
-		logger:                  logger,
-		tracer:                  tracer,
+		DB:                       db,
+		database:                 dsn.database,
+		schema:                   dsn.schema,
+		entries:                  NewOrderedMap[string, *OrderedMap[string, *Operation]](),
+		tables:                   map[string]*TableInfo{},
+		batchBlockFlushInterval:  batchBlockFlushInterval,
+		batchRowFlushInterval:    batchRowFlushInterval,
+		maxFlushRetries:          3,
+		sleepBetweenFlushRetries: 5 * time.Second,
+		liveBlockFlushInterval:   liveBlockFlushInterval,
+		moduleMismatchMode:       moduleMismatchMode,
+		logger:                   logger,
+		tracer:                   tracer,
 	}
 	_, err = l.tryDialect()
 	if err != nil {

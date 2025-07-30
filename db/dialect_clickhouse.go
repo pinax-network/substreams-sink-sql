@@ -12,12 +12,28 @@ import (
 	"strings"
 	"time"
 
-	clickhouse "github.com/AfterShip/clickhouse-sql-parser/parser"
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/streamingfast/cli"
 	sink "github.com/streamingfast/substreams-sink"
 	"go.uber.org/zap"
 	"golang.org/x/exp/maps"
+)
+
+// Identifier pattern for quoted/unquoted identifiers to use across all regexes
+const (
+	// Captures any of: 'quoted name', "quoted name", or unquoted_name
+	identifierPattern = `((?:'[^']*')|(?:"[^"]*")|(?:[a-zA-Z_][a-zA-Z0-9_]*))`
+)
+
+// Regex patterns for SQL statement matching
+var (
+	createDbPattern               = regexp.MustCompile(`(?i)^\s*CREATE\s+(DATABASE|SCHEMA)\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createTablePattern            = regexp.MustCompile(`(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createMaterializedViewPattern = regexp.MustCompile(`(?i)^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createViewPattern             = regexp.MustCompile(`(?i)^\s*CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createFunctionPattern         = regexp.MustCompile(`(?i)^\s*CREATE\s+FUNCTION\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	alterTablePattern             = regexp.MustCompile(`(?i)^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?` + identifierPattern)
+	mergeTreeEnginePattern        = regexp.MustCompile(`(?i)(ENGINE\s*=\s*)([A-Za-z]*MergeTree)(\(|\s+|;|$)`)
 )
 
 type clickhouseDialect struct{}
@@ -113,83 +129,150 @@ func (d clickhouseDialect) GetCreateHistoryQuery(schema string, withPostgraphile
 }
 
 func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, schemaSql string) error {
-
-	if CLICKHOUSE_CLUSTER != "" {
-		stmts, err := clickhouse.NewParser(schemaSql).ParseStmts()
-		if err != nil {
-			return fmt.Errorf("parsing schema: %w", err)
-		}
-
-		for _, stmt := range stmts {
-			if createDatabase, ok := stmt.(*clickhouse.CreateDatabase); ok {
-				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE DATABASE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("database", createDatabase.Name.String()))
-				createDatabase.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
-			}
-			if createTable, ok := stmt.(*clickhouse.CreateTable); ok {
-				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", createTable.Name.String()))
-				createTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
-
-				if createTable.Engine != nil && !strings.HasPrefix(createTable.Engine.Name, "Replicated") &&
-					strings.HasSuffix(createTable.Engine.Name, "MergeTree") {
-					newEngine := "Replicated" + createTable.Engine.Name
-					l.logger.Debug("replacing table engine with replicated one", zap.String("table", createTable.Name.String()), zap.String("engine", createTable.Engine.Name), zap.String("new_engine", newEngine))
-					createTable.Engine.Name = newEngine
-				}
-			}
-			if createMaterializedView, ok := stmt.(*clickhouse.CreateMaterializedView); ok {
-				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE MATERIALIZED VIEW'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("materialized_view", createMaterializedView.Name.String()))
-				createMaterializedView.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
-
-				if createMaterializedView.Engine != nil && !strings.HasPrefix(createMaterializedView.Engine.Name, "Replicated") &&
-					strings.HasSuffix(createMaterializedView.Engine.Name, "MergeTree") {
-					newEngine := "Replicated" + createMaterializedView.Engine.Name
-					l.logger.Debug("replacing table engine with replicated one", zap.String("materialized_view", createMaterializedView.Name.String()), zap.String("engine", createMaterializedView.Engine.Name), zap.String("new_engine", newEngine))
-					createMaterializedView.Engine.Name = newEngine
-				}
-			}
-			if createView, ok := stmt.(*clickhouse.CreateView); ok {
-				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE VIEW'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("view", createView.Name.String()))
-				createView.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
-			}
-			if createFunction, ok := stmt.(*clickhouse.CreateFunction); ok {
-				l.logger.Debug("appending 'ON CLUSTER' clause to 'CREATE FUNCTION'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("function", createFunction.FunctionName.String()))
-				createFunction.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
-			}
-			if alterTable, ok := stmt.(*clickhouse.AlterTable); ok {
-				l.logger.Debug("appending 'ON CLUSTER' clause to 'ALTER TABLE'", zap.String("cluster", CLICKHOUSE_CLUSTER), zap.String("table", alterTable.TableIdentifier.String()))
-				alterTable.OnCluster = &clickhouse.ClusterClause{Expr: &clickhouse.StringLiteral{Literal: CLICKHOUSE_CLUSTER}}
-			}
-
-			stmtStr := fixParserIssues(stmt.String())
-
-			if _, err := l.ExecContext(ctx, stmtStr); err != nil {
-				l.logger.Error("failed to execute schema statement", zap.String("statement", stmtStr), zap.Error(err))
-				return fmt.Errorf("exec schema: %w", err)
-			}
-		}
-	} else {
+	if CLICKHOUSE_CLUSTER == "" {
+		// If no cluster is specified, execute statements as-is
 		for _, query := range strings.Split(schemaSql, ";") {
-			if len(strings.TrimSpace(query)) == 0 {
+			query = strings.TrimSpace(query)
+			if len(query) == 0 {
 				continue
 			}
 			if _, err := l.ExecContext(ctx, query); err != nil {
 				return fmt.Errorf("exec schema: %w", err)
 			}
 		}
+		return nil
+	}
+
+	schemaSql = stripSQLComments(schemaSql)
+
+	// Process each statement when cluster mode is enabled
+	for _, query := range strings.Split(schemaSql, ";") {
+		query := strings.TrimSpace(query)
+		if len(query) == 0 {
+			continue
+		}
+		modifiedQuery, _ := patchClickhouseQuery(query, CLICKHOUSE_CLUSTER)
+
+		// Execute the modified statement
+		if _, err := l.ExecContext(ctx, modifiedQuery); err != nil {
+			l.logger.Error("failed to execute schema statement",
+				zap.String("statement", modifiedQuery),
+				zap.Error(err))
+			return fmt.Errorf("exec schema: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// fixParserIssues fixes parser issues
-func fixParserIssues(sql string) string {
-	// Fix identifier+WHEN issue (like program_idWHEN) in CASE statements
-	// Make sure to capture CASE as well so it's preserved
-	re := regexp.MustCompile(`(CASE.*?)([a-zA-Z0-9_]+)(WHEN\s)`)
+// patchClickhouseQuery applies required transformations to ClickHouse SQL statements
+// for cluster mode. Returns the modified query and the detected statement type.
+func patchClickhouseQuery(sql, clusterName string) (string, string) {
 
-	sql = re.ReplaceAllString(sql, "$1$2 $3")
+	var stmtType string
+
+	// CREATE DATABASE
+	if matches := createDbPattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "CREATE DATABASE"
+		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
+			sql = createDbPattern.ReplaceAllString(sql,
+				fmt.Sprintf("CREATE %s IF NOT EXISTS $2 ON CLUSTER %s",
+					matches[1], EscapeIdentifier(clusterName)))
+		}
+	}
+
+	// CREATE TABLE
+	if matches := createTablePattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "CREATE TABLE"
+		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
+			sql = createTablePattern.ReplaceAllString(sql,
+				fmt.Sprintf("CREATE TABLE IF NOT EXISTS $1 ON CLUSTER %s",
+					EscapeIdentifier(clusterName)))
+		}
+
+		sql = replaceEngineWithReplicated(sql)
+	}
+
+	// CREATE MATERIALIZED VIEW
+	if matches := createMaterializedViewPattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "CREATE MATERIALIZED VIEW"
+		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
+			sql = createMaterializedViewPattern.ReplaceAllString(sql,
+				fmt.Sprintf("CREATE MATERIALIZED VIEW IF NOT EXISTS $1 ON CLUSTER %s",
+					EscapeIdentifier(clusterName)))
+		}
+
+		sql = replaceEngineWithReplicated(sql)
+	}
+
+	// CREATE VIEW
+	if matches := createViewPattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "CREATE VIEW"
+		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
+			sql = createViewPattern.ReplaceAllString(sql,
+				fmt.Sprintf("CREATE VIEW IF NOT EXISTS $1 ON CLUSTER %s",
+					EscapeIdentifier(clusterName)))
+		}
+	}
+
+	// CREATE FUNCTION
+	if matches := createFunctionPattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "CREATE FUNCTION"
+		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
+			sql = createFunctionPattern.ReplaceAllString(sql,
+				fmt.Sprintf("CREATE FUNCTION IF NOT EXISTS $1 ON CLUSTER %s",
+					EscapeIdentifier(clusterName)))
+		}
+	}
+
+	// ALTER TABLE
+	if matches := alterTablePattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "ALTER TABLE"
+		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
+			sql = alterTablePattern.ReplaceAllString(sql,
+				fmt.Sprintf("ALTER TABLE $1 ON CLUSTER %s",
+					EscapeIdentifier(clusterName)))
+		}
+	}
+
+	return sql, stmtType
+}
+
+// replaceEngineWithReplicated replaces non-replicated MergeTree engines with their Replicated variants
+func replaceEngineWithReplicated(sql string) string {
+	sql = mergeTreeEnginePattern.ReplaceAllStringFunc(sql, func(match string) string {
+		submatches := mergeTreeEnginePattern.FindStringSubmatch(match)
+		if len(submatches) >= 3 {
+			prefix := submatches[1]     // ENGINE =
+			engineName := submatches[2] // e.g., SummingMergeTree
+			suffix := submatches[3]     // (, or space, or ; or end
+
+			if !strings.HasPrefix(strings.ToUpper(engineName), "REPLICATED") &&
+				strings.HasSuffix(strings.ToUpper(engineName), "MERGETREE") {
+				return prefix + "Replicated" + engineName + suffix
+			}
+		}
+		return match
+	})
 
 	return sql
+}
+
+// stripSQLComments removes all SQL comments from an SQL statement
+func stripSQLComments(sql string) string {
+	// Remove single-line comments (--)
+	lineCommentPattern := regexp.MustCompile(`--[^\n]*`)
+	result := lineCommentPattern.ReplaceAllString(sql, "")
+
+	// Remove multi-line comments (/* ... */)
+	blockCommentPattern := regexp.MustCompile(`/\*[\s\S]*?\*/`)
+	result = blockCommentPattern.ReplaceAllString(result, "")
+
+	// Normalize whitespace
+	whitespacePattern := regexp.MustCompile(`\s+`)
+	result = whitespacePattern.ReplaceAllString(result, " ")
+
+	return strings.TrimSpace(result)
 }
 
 func (d clickhouseDialect) GetUpdateCursorQuery(table, moduleHash string, cursor *sink.Cursor, block_num uint64, block_id string) string {
