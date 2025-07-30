@@ -108,9 +108,15 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			expectedStmtType: "CREATE TABLE",
 		},
 		{
-			name:             "CREATE TABLE - with IF NOT EXISTS",
-			input:            "CREATE TABLE IF NOT EXISTS mytable (id UInt32)",
-			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32)",
+			name:             "CREATE TABLE with quotes - with IF NOT EXISTS",
+			input:            "CREATE TABLE IF NOT EXISTS 'mytable' (id UInt32)",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS 'mytable' ON CLUSTER \"test_cluster\" (id UInt32)",
+			expectedStmtType: "CREATE TABLE",
+		},
+		{
+			name:             "CREATE TABLE with space in name - with IF NOT EXISTS",
+			input:            "CREATE TABLE IF NOT EXISTS 'my table' (id UInt32)",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS 'my table' ON CLUSTER \"test_cluster\" (id UInt32)",
 			expectedStmtType: "CREATE TABLE",
 		},
 		{
@@ -165,6 +171,12 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			name:             "CREATE FUNCTION - simple",
 			input:            "CREATE FUNCTION myfunc AS (a, b) -> a + b",
 			expectedOutput:   "CREATE FUNCTION IF NOT EXISTS myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
+			expectedStmtType: "CREATE FUNCTION",
+		},
+		{
+			name:             "CREATE FUNCTION - with quotes",
+			input:            "CREATE FUNCTION \"my func\" AS (a, b) -> a + b",
+			expectedOutput:   "CREATE FUNCTION IF NOT EXISTS \"my func\" ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
 			expectedStmtType: "CREATE FUNCTION",
 		},
 

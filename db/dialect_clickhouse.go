@@ -19,14 +19,20 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+// Identifier pattern for quoted/unquoted identifiers to use across all regexes
+const (
+	// Captures any of: 'quoted name', "quoted name", or unquoted_name
+	identifierPattern = `((?:'[^']*')|(?:"[^"]*")|(?:[^\s;(]+))`
+)
+
 // Regex patterns for SQL statement matching
 var (
-	createDbPattern               = regexp.MustCompile(`(?i)^\s*CREATE\s+(DATABASE|SCHEMA)\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createTablePattern            = regexp.MustCompile(`(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createMaterializedViewPattern = regexp.MustCompile(`(?i)^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createViewPattern             = regexp.MustCompile(`(?i)^\s*CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createFunctionPattern         = regexp.MustCompile(`(?i)^\s*CREATE\s+FUNCTION\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	alterTablePattern             = regexp.MustCompile(`(?i)^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;(]+)`)
+	createDbPattern               = regexp.MustCompile(`(?i)^\s*CREATE\s+(DATABASE|SCHEMA)\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createTablePattern            = regexp.MustCompile(`(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createMaterializedViewPattern = regexp.MustCompile(`(?i)^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createViewPattern             = regexp.MustCompile(`(?i)^\s*CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createFunctionPattern         = regexp.MustCompile(`(?i)^\s*CREATE\s+FUNCTION\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	alterTablePattern             = regexp.MustCompile(`(?i)^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?` + identifierPattern)
 	mergeTreeEnginePattern        = regexp.MustCompile(`(?i)(ENGINE\s*=\s*)([A-Za-z]*MergeTree)(\(|\s+|;|$)`)
 )
 
