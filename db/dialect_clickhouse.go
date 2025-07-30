@@ -22,7 +22,7 @@ import (
 // Identifier pattern for quoted/unquoted identifiers to use across all regexes
 const (
 	// Captures any of: 'quoted name', "quoted name", or unquoted_name
-	identifierPattern = `((?:'[^']*')|(?:"[^"]*")|(?:[^\s;(]+))`
+	identifierPattern = `((?:'[^']*')|(?:"[^"]*")|(?:[a-zA-Z_][a-zA-Z0-9_]*))`
 )
 
 // Regex patterns for SQL statement matching
