@@ -19,6 +19,17 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+// Regex patterns for SQL statement matching
+var (
+	createDbPattern               = regexp.MustCompile(`(?i)^\s*CREATE\s+(DATABASE|SCHEMA)\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
+	createTablePattern            = regexp.MustCompile(`(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
+	createMaterializedViewPattern = regexp.MustCompile(`(?i)^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
+	createViewPattern             = regexp.MustCompile(`(?i)^\s*CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
+	createFunctionPattern         = regexp.MustCompile(`(?i)^\s*CREATE\s+FUNCTION\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
+	alterTablePattern             = regexp.MustCompile(`(?i)^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;(]+)`)
+	mergeTreeEnginePattern        = regexp.MustCompile(`(?i)(ENGINE\s*=\s*)([A-Za-z]*MergeTree)(\(|\s+|;|$)`)
+)
+
 type clickhouseDialect struct{}
 
 // Clickhouse should be used to insert a lot of data in batches. The current official clickhouse
@@ -151,12 +162,6 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 // patchClickhouseQuery applies required transformations to ClickHouse SQL statements
 // for cluster mode. Returns the modified query and the detected statement type.
 func patchClickhouseQuery(sql, clusterName string) (string, string) {
-	createDbPattern := regexp.MustCompile(`(?i)^\s*CREATE\s+(DATABASE|SCHEMA)\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createTablePattern := regexp.MustCompile(`(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createMaterializedViewPattern := regexp.MustCompile(`(?i)^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createViewPattern := regexp.MustCompile(`(?i)^\s*CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	createFunctionPattern := regexp.MustCompile(`(?i)^\s*CREATE\s+FUNCTION\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s;(]+)`)
-	alterTablePattern := regexp.MustCompile(`(?i)^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;(]+)`)
 
 	var stmtType string
 
@@ -229,11 +234,8 @@ func patchClickhouseQuery(sql, clusterName string) (string, string) {
 
 // replaceEngineWithReplicated replaces non-replicated MergeTree engines with their Replicated variants
 func replaceEngineWithReplicated(sql string) string {
-	sql = regexp.MustCompile(`(?i)(ENGINE\s*=\s*)(MergeTree)(\(|\s+|;|$)`).ReplaceAllString(sql, "${1}ReplicatedMergeTree${3}")
-
-	re := regexp.MustCompile(`(?i)(ENGINE\s*=\s*)([A-Za-z]+MergeTree)(\(|\s+|;|$)`)
-	sql = re.ReplaceAllStringFunc(sql, func(match string) string {
-		submatches := re.FindStringSubmatch(match)
+	sql = mergeTreeEnginePattern.ReplaceAllStringFunc(sql, func(match string) string {
+		submatches := mergeTreeEnginePattern.FindStringSubmatch(match)
 		if len(submatches) >= 3 {
 			prefix := submatches[1]     // ENGINE =
 			engineName := submatches[2] // e.g., SummingMergeTree
