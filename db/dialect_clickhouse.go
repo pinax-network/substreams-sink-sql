@@ -126,9 +126,11 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 		return nil
 	}
 
+	schemaSql = stripSQLComments(schemaSql)
+
 	// Process each statement when cluster mode is enabled
 	for _, query := range strings.Split(schemaSql, ";") {
-		query := stripSQLComments(query)
+		query := strings.TrimSpace(query)
 		if len(query) == 0 {
 			continue
 		}
@@ -217,7 +219,7 @@ func patchClickhouseQuery(sql, clusterName string) (string, string) {
 		stmtType = "ALTER TABLE"
 		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
 			sql = alterTablePattern.ReplaceAllString(sql,
-				fmt.Sprintf("ALTER TABLE IF EXISTS $1 ON CLUSTER %s",
+				fmt.Sprintf("ALTER TABLE $1 ON CLUSTER %s",
 					EscapeIdentifier(clusterName)))
 		}
 	}
@@ -250,17 +252,18 @@ func replaceEngineWithReplicated(sql string) string {
 
 // stripSQLComments removes all SQL comments from an SQL statement
 func stripSQLComments(sql string) string {
-	// Pattern to match -- style comments until end of line
-	commentPattern := regexp.MustCompile(`--[^\n]*`)
+	// Remove single-line comments (--)
+	lineCommentPattern := regexp.MustCompile(`--[^\n]*`)
+	result := lineCommentPattern.ReplaceAllString(sql, "")
 
-	// Remove all comments and trim whitespace
-	result := commentPattern.ReplaceAllString(sql, "")
+	// Remove multi-line comments (/* ... */)
+	blockCommentPattern := regexp.MustCompile(`/\*[\s\S]*?\*/`)
+	result = blockCommentPattern.ReplaceAllString(result, "")
 
-	// Replace any multiple whitespaces with a single space
+	// Normalize whitespace
 	whitespacePattern := regexp.MustCompile(`\s+`)
 	result = whitespacePattern.ReplaceAllString(result, " ")
 
-	// Final trim
 	return strings.TrimSpace(result)
 }
 

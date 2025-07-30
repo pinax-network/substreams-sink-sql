@@ -137,12 +137,6 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32, val UInt64) ENGINE = ReplicatedSummingMergeTree(val) ORDER BY id",
 			expectedStmtType: "CREATE TABLE",
 		},
-		{
-			name:             "-- comment CREATE TABLE - with ReplacingMergeTree engine",
-			input:            "-- comment CREATE TABLE mytable (id UInt32, val UInt64) ENGINE = ReplacingMergeTree(val) ORDER BY id",
-			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32, val UInt64) ENGINE = ReplicatedReplacingMergeTree(val) ORDER BY id",
-			expectedStmtType: "CREATE TABLE",
-		},
 
 		// CREATE MATERIALIZED VIEW tests
 		{
@@ -178,13 +172,7 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		{
 			name:             "ALTER TABLE - simple",
 			input:            "ALTER TABLE mytable ADD COLUMN newcol UInt32",
-			expectedOutput:   "ALTER TABLE IF EXISTS mytable ON CLUSTER \"test_cluster\" ADD COLUMN newcol UInt32",
-			expectedStmtType: "ALTER TABLE",
-		},
-		{
-			name:             "ALTER TABLE - with IF EXISTS",
-			input:            "ALTER TABLE IF EXISTS mytable ADD COLUMN newcol UInt32",
-			expectedOutput:   "ALTER TABLE IF EXISTS mytable ON CLUSTER \"test_cluster\" ADD COLUMN newcol UInt32",
+			expectedOutput:   "ALTER TABLE mytable ON CLUSTER \"test_cluster\" ADD COLUMN newcol UInt32",
 			expectedStmtType: "ALTER TABLE",
 		},
 
@@ -208,6 +196,42 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			output, stmtType := patchClickhouseQuery(tt.input, clusterName)
 			assert.Equal(t, tt.expectedOutput, output)
 			assert.Equal(t, tt.expectedStmtType, stmtType)
+		})
+	}
+}
+
+func Test_stripSQLComments(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "single line comment",
+			input:    "-- This is a comment\nCREATE TABLE test",
+			expected: "CREATE TABLE test",
+		},
+		{
+			name:     "multi-line comment",
+			input:    "/* ──────────────────────────────\n   comment \n   ───────────────────────────── */\nCREATE TABLE test",
+			expected: "CREATE TABLE test",
+		},
+		{
+			name:     "multi-line comment nested",
+			input:    "/* ─────────────────\n\n────────────────── */\nCREATE TABLE test/* ───────────────────────────*/",
+			expected: "CREATE TABLE test",
+		},
+		{
+			name:     "mixed comments",
+			input:    "-- Header comment\n/* Block comment\nMultiple lines\n*/CREATE TABLE test -- inline comment",
+			expected: "CREATE TABLE test",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripSQLComments(tt.input)
+			assert.Equal(t, tt.expected, got)
 		})
 	}
 }

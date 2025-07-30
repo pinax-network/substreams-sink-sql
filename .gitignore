@@ -9,3 +9,4 @@ build/
 *.spkg
 /substreams-sink-sql
 docker/data
+.vscode/
