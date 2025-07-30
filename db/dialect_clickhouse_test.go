@@ -137,6 +137,12 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32, val UInt64) ENGINE = ReplicatedSummingMergeTree(val) ORDER BY id",
 			expectedStmtType: "CREATE TABLE",
 		},
+		{
+			name:             "-- comment CREATE TABLE - with ReplacingMergeTree engine",
+			input:            "-- comment CREATE TABLE mytable (id UInt32, val UInt64) ENGINE = ReplacingMergeTree(val) ORDER BY id",
+			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32, val UInt64) ENGINE = ReplicatedReplacingMergeTree(val) ORDER BY id",
+			expectedStmtType: "CREATE TABLE",
+		},
 
 		// CREATE MATERIALIZED VIEW tests
 		{

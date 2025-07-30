@@ -128,18 +128,11 @@ func (d clickhouseDialect) ExecuteSetupScript(ctx context.Context, l *Loader, sc
 
 	// Process each statement when cluster mode is enabled
 	for _, query := range strings.Split(schemaSql, ";") {
-		query = strings.TrimSpace(query)
+		query := stripSQLComments(query)
 		if len(query) == 0 {
 			continue
 		}
-
-		// Apply transformations based on statement type
-		modifiedQuery, stmtType := patchClickhouseQuery(query, CLICKHOUSE_CLUSTER)
-
-		if stmtType != "" {
-			l.logger.Debug(fmt.Sprintf("appending 'ON CLUSTER' clause to '%s'", stmtType),
-				zap.String("cluster", CLICKHOUSE_CLUSTER))
-		}
+		modifiedQuery, _ := patchClickhouseQuery(query, CLICKHOUSE_CLUSTER)
 
 		// Execute the modified statement
 		if _, err := l.ExecContext(ctx, modifiedQuery); err != nil {
@@ -253,6 +246,22 @@ func replaceEngineWithReplicated(sql string) string {
 	})
 
 	return sql
+}
+
+// stripSQLComments removes all SQL comments from an SQL statement
+func stripSQLComments(sql string) string {
+	// Pattern to match -- style comments until end of line
+	commentPattern := regexp.MustCompile(`--[^\n]*`)
+
+	// Remove all comments and trim whitespace
+	result := commentPattern.ReplaceAllString(sql, "")
+
+	// Replace any multiple whitespaces with a single space
+	whitespacePattern := regexp.MustCompile(`\s+`)
+	result = whitespacePattern.ReplaceAllString(result, " ")
+
+	// Final trim
+	return strings.TrimSpace(result)
 }
 
 func (d clickhouseDialect) GetUpdateCursorQuery(table, moduleHash string, cursor *sink.Cursor, block_num uint64, block_id string) string {
