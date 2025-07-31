@@ -260,19 +260,19 @@ func replaceEngineWithReplicated(sql string) string {
 
 // stripSQLComments removes all SQL comments from an SQL statement
 func stripSQLComments(sql string) string {
-	// Remove single-line comments (--)
-	lineCommentPattern := regexp.MustCompile(`--[^\n]*`)
-	result := lineCommentPattern.ReplaceAllString(sql, "")
-
 	// Remove multi-line comments (/* ... */)
 	blockCommentPattern := regexp.MustCompile(`/\*[\s\S]*?\*/`)
-	result = blockCommentPattern.ReplaceAllString(result, "")
+	sql = blockCommentPattern.ReplaceAllString(sql, "")
+
+	// Remove single-line comments (--)
+	lineCommentPattern := regexp.MustCompile(`--[^\n]*`)
+	sql = lineCommentPattern.ReplaceAllString(sql, "")
 
 	// Normalize whitespace
 	whitespacePattern := regexp.MustCompile(`\s+`)
-	result = whitespacePattern.ReplaceAllString(result, " ")
+	sql = whitespacePattern.ReplaceAllString(sql, " ")
 
-	return strings.TrimSpace(result)
+	return strings.TrimSpace(sql)
 }
 
 func (d clickhouseDialect) GetUpdateCursorQuery(table, moduleHash string, cursor *sink.Cursor, block_num uint64, block_id string) string {
