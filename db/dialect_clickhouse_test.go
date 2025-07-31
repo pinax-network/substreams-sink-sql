@@ -234,6 +234,11 @@ func Test_stripSQLComments(t *testing.T) {
 			expected: "CREATE TABLE test",
 		},
 		{
+			name:     "multi-line comment nested with other comments",
+			input:    "/* one-time DDL -----------------------------------------------------------*/\nCREATE TABLE test/* ───────────────────────────*/",
+			expected: "CREATE TABLE test",
+		},
+		{
 			name:     "mixed comments",
 			input:    "-- Header comment\n/* Block comment\nMultiple lines\n*/CREATE TABLE test -- inline comment",
 			expected: "CREATE TABLE test",
