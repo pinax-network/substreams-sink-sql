@@ -111,13 +111,22 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		// We do not use UnmarshalTo here because we need to parse an older proto type and
 		// UnmarshalTo enforces the type check. So we check manually the `TypeUrl` above and we use
 		// `Unmarshal` instead which only deals with the bytes value.
+		
+		// Measure protobuf decoding performance
+		ProtobufMessageSize.AddInt(len(mapOutput.Value))
+		decodeStart := time.Now()
 		if err := proto.Unmarshal(mapOutput.Value, dbChanges); err != nil {
 			return fmt.Errorf("unmarshal database changes: %w", err)
 		}
+		ProtobufDecodeDuration.AddInt64(time.Since(decodeStart).Nanoseconds())
 
+		// Measure database changes application performance
+		applyStart := time.Now()
 		if err := s.applyDatabaseChanges(dbChanges, data.Clock.Number, data.FinalBlockHeight); err != nil {
 			return fmt.Errorf("apply database changes: %w", err)
 		}
+		DatabaseChangesDuration.AddInt64(time.Since(applyStart).Nanoseconds())
+		DatabaseChangesCount.AddInt(len(dbChanges.TableChanges))
 	}
 	if s.lastAppliedBlockNum == nil {
 		s.lastAppliedBlockNum = &data.Clock.Number
