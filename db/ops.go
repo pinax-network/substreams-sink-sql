@@ -13,22 +13,7 @@ import (
 func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
 	uniqueID := createRowUniqueID(primaryKey)
 
-    // Backpressure: if a flush is in progress and the active buffer reached threshold, wait
     l.mu.Lock()
-    for {
-        total := 0
-        for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
-            total += pair.Value.Len()
-        }
-        if !l.flushingInProgress || total < l.batchRowFlushInterval {
-            break
-        }
-        if l.cond != nil {
-            l.cond.Wait()
-        } else {
-            break
-        }
-    }
 
 	if l.tracer.Enabled() {
 		l.logger.Debug("processing insert operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
@@ -110,22 +95,7 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 		l.logger.Debug("processing update operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
 	}
 
-	// Backpressure: block if buffer is full
 	l.mu.Lock()
-	for {
-		total := 0
-		for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
-			total += pair.Value.Len()
-		}
-		if total < l.batchRowFlushInterval {
-			break
-		}
-		if l.cond != nil {
-			l.cond.Wait()
-		} else {
-			break
-		}
-	}
 
 	table, found := l.tables[tableName]
 	if !found {
