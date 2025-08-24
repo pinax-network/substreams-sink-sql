@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
+
+	"sync"
 
 	"github.com/jimsmart/schema"
 	"github.com/streamingfast/logging"
+	sink "github.com/streamingfast/substreams-sink"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -52,6 +56,11 @@ type Loader struct {
 	tracer logging.Tracer
 
 	testTx *TestTx // used for testing: if non-nil, 'loader.BeginTx()' will return this object instead of a real *sql.Tx
+
+	// async flush
+	mu                 sync.Mutex
+	flushingInProgress bool
+	cond               *sync.Cond
 }
 
 func NewLoader(
@@ -89,6 +98,8 @@ func NewLoader(
 		logger:                   logger,
 		tracer:                   tracer,
 	}
+	l.mu = sync.Mutex{}
+	l.cond = sync.NewCond(&l.mu)
 	_, err = l.tryDialect()
 	if err != nil {
 		return nil, fmt.Errorf("dialect not found: %s", err)
@@ -150,13 +161,128 @@ func (l *Loader) LiveBlockFlushInterval() int {
 	return l.liveBlockFlushInterval
 }
 
+func (l *Loader) GetPrimaryKey(tableName string, pk string) (map[string]string, error) {
+	table, found := l.tables[tableName]
+	if !found {
+		return nil, fmt.Errorf("unknown table %q", tableName)
+	}
+	if len(table.primaryColumns) == 1 {
+		return map[string]string{table.primaryColumns[0].name: pk}, nil
+	}
+	parts := strings.Split(pk, "/")
+	if len(parts) != len(table.primaryColumns) {
+		return nil, fmt.Errorf("composite primary key value count mismatch for table %q: got %d parts, expected %d", tableName, len(parts), len(table.primaryColumns))
+	}
+	res := make(map[string]string, len(parts))
+	for i, col := range table.primaryColumns {
+		res[col.name] = parts[i]
+	}
+	return res, nil
+}
+
 func (l *Loader) FlushNeeded() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	totalRows := 0
 	// todo keep a running count when inserting/deleting rows directly
 	for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
 		totalRows += pair.Value.Len()
 	}
 	return totalRows > l.batchRowFlushInterval
+}
+
+// FlushAsync triggers a non-blocking flush. Returns true if a flush was started.
+func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) bool {
+	l.mu.Lock()
+	if l.flushingInProgress {
+		l.mu.Unlock()
+		return false
+	}
+	// Snapshot entries and replace with a fresh buffer
+	snapshot := l.entries
+	l.entries = NewOrderedMap[string, *OrderedMap[string, *Operation]]()
+	l.flushingInProgress = true
+	l.mu.Unlock()
+
+	l.logger.Info("async flush started")
+
+	go func() {
+		// Create a shallow copy loader that uses the snapshot for flushing
+		tl := *l
+		tl.entries = snapshot
+
+		// Perform a single flush attempt with its own transaction (reusing existing logic but avoiding reset())
+		tx, err := l.BeginTx(ctx, nil)
+		if err != nil {
+			l.logger.Warn("async flush: failed to begin tx", zap.Error(err))
+			l.mu.Lock()
+			l.flushingInProgress = false
+			if l.cond != nil {
+				l.cond.Broadcast()
+			}
+			l.mu.Unlock()
+			return
+		}
+		// Ensure rollback on error
+		committed := false
+		defer func() {
+			if !committed {
+				if err := tx.Rollback(); err != nil {
+					l.logger.Warn("async flush: rollback failed", zap.Error(err))
+				}
+			}
+		}()
+
+		start := time.Now()
+		rowFlushedCount, err := tl.getDialect().Flush(tx, ctx, &tl, outputModuleHash, lastFinalBlock)
+		if err != nil {
+			l.logger.Warn("async flush: dialect flush failed", zap.Error(err))
+			l.mu.Lock()
+			l.flushingInProgress = false
+			if l.cond != nil {
+				l.cond.Broadcast()
+			}
+			l.mu.Unlock()
+			return
+		}
+
+		// Update cursor for the snapshot
+		if err := l.UpdateCursor(ctx, tx, outputModuleHash, cursor); err != nil {
+			l.logger.Warn("async flush: update cursor failed", zap.Error(err))
+			l.mu.Lock()
+			l.flushingInProgress = false
+			if l.cond != nil {
+				l.cond.Broadcast()
+			}
+			l.mu.Unlock()
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			l.logger.Warn("async flush: commit failed", zap.Error(err))
+			l.mu.Lock()
+			l.flushingInProgress = false
+			if l.cond != nil {
+				l.cond.Broadcast()
+			}
+			l.mu.Unlock()
+			return
+		}
+		committed = true
+
+		l.logger.Debug("async flush complete",
+			zap.Int("row_count", rowFlushedCount),
+			zap.Duration("took", time.Since(start)))
+
+		l.mu.Lock()
+		l.flushingInProgress = false
+		if l.cond != nil {
+			l.cond.Broadcast()
+		}
+		l.mu.Unlock()
+	}()
+
+	return true
 }
 
 func (l *Loader) LoadTables() error {

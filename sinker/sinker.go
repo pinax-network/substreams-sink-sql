@@ -135,7 +135,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && data.Clock.Number-*s.lastAppliedBlockNum >= s.batchBlockModulo(isLive)
 	rowFlushNeeded := s.loader.FlushNeeded()
 	if blockFlushNeeded || rowFlushNeeded {
-		s.logger.Debug("flushing to database",
+		s.logger.Debug("triggering async flush",
 			zap.Stringer("block", cursor.Block()),
 			zap.Uint64("last_flushed_block", *s.lastAppliedBlockNum),
 			zap.Bool("is_live", *isLive),
@@ -143,31 +143,10 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 			zap.Bool("row_flush_interval_reached", rowFlushNeeded),
 		)
 
-		flushStart := time.Now()
-		rowFlushedCount, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
-		if err != nil {
-			return fmt.Errorf("failed to flush at block %s: %w", cursor.Block(), err)
+		started := s.loader.FlushAsync(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
+		if !started {
+			// A flush is already in progress; nothing to do.
 		}
-
-		flushDuration := time.Since(flushStart)
-		if flushDuration > 5*time.Second {
-			level := zap.InfoLevel
-			if flushDuration > 30*time.Second {
-				level = zap.WarnLevel
-			}
-
-			s.logger.Check(level, "flush to database took a long time to complete, could cause long sync time along the road").Write(zap.Duration("took", flushDuration))
-		}
-
-		FlushCount.Inc()
-		FlushedRowsCount.AddInt(rowFlushedCount)
-		FlushDuration.AddInt64(flushDuration.Nanoseconds())
-		HeadBlockTimeDrift.SetBlockTime(data.Clock.GetTimestamp().AsTime())
-		HeadBlockNumber.SetUint64(data.Clock.GetNumber())
-
-		s.stats.RecordBlock(cursor.Block())
-		s.stats.RecordFlushDuration(flushDuration)
-		s.lastAppliedBlockNum = &data.Clock.Number
 	}
 
 	return nil

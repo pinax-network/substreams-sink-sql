@@ -13,12 +13,30 @@ import (
 func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
 	uniqueID := createRowUniqueID(primaryKey)
 
+    // Backpressure: if a flush is in progress and the active buffer reached threshold, wait
+    l.mu.Lock()
+    for {
+        total := 0
+        for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
+            total += pair.Value.Len()
+        }
+        if !l.flushingInProgress || total < l.batchRowFlushInterval {
+            break
+        }
+        if l.cond != nil {
+            l.cond.Wait()
+        } else {
+            break
+        }
+    }
+
 	if l.tracer.Enabled() {
 		l.logger.Debug("processing insert operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
 	}
 
 	table, found := l.tables[tableName]
 	if !found {
+		l.mu.Unlock()
 		return fmt.Errorf("unknown table %q", tableName)
 	}
 
@@ -33,6 +51,7 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 	}
 
 	if _, found := entry.Get(uniqueID); found && !l.getDialect().AllowPkDuplicates() {
+		l.mu.Unlock()
 		return fmt.Errorf("attempting to insert in table %q a primary key %q, that is already scheduled for insertion, insert should only be called once for a given primary key", tableName, primaryKey)
 	}
 
@@ -49,6 +68,7 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 
 	entry.Set(uniqueID, l.newInsertOperation(table, primaryKey, data, reversibleBlockNum))
 	l.entriesCount++
+	l.mu.Unlock()
 	return nil
 }
 
@@ -78,23 +98,6 @@ func createRowUniqueID(m map[string]string) string {
 	return strings.Join(values, "/")
 }
 
-func (l *Loader) GetPrimaryKey(tableName string, pk string) (map[string]string, error) {
-	primaryKeyColumns := l.tables[tableName].primaryColumns
-
-	switch len(primaryKeyColumns) {
-	case 0:
-		return nil, fmt.Errorf("substreams sent a single primary key, but our sql table has none. This is unsupported.")
-	case 1:
-		return map[string]string{primaryKeyColumns[0].name: pk}, nil
-	}
-
-	cols := make([]string, len(primaryKeyColumns))
-	for i := range primaryKeyColumns {
-		cols[i] = primaryKeyColumns[i].name
-	}
-	return nil, fmt.Errorf("substreams sent a single primary key, but our sql table has a composite primary key (columns: %s). This is unsupported.", strings.Join(cols, ","))
-}
-
 // Update a row in the DB, it is assumed the table exists, you can do a
 // check before with HasTable()
 func (l *Loader) Update(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
@@ -107,13 +110,27 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 		l.logger.Debug("processing update operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
 	}
 
-	table, found := l.tables[tableName]
-	if !found {
-		return fmt.Errorf("unknown table %q", tableName)
+	// Backpressure: block if buffer is full
+	l.mu.Lock()
+	for {
+		total := 0
+		for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
+			total += pair.Value.Len()
+		}
+		if total < l.batchRowFlushInterval {
+			break
+		}
+		if l.cond != nil {
+			l.cond.Wait()
+		} else {
+			break
+		}
 	}
 
-	if len(table.primaryColumns) == 0 {
-		return fmt.Errorf("trying to perform an UPDATE operation but table %q don't have a primary key(s) set, this is not accepted", tableName)
+	table, found := l.tables[tableName]
+	if !found {
+		l.mu.Unlock()
+		return fmt.Errorf("unknown table %q", tableName)
 	}
 
 	entry, found := l.entries.Get(tableName)
@@ -128,6 +145,7 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 
 	if op, found := entry.Get(uniqueID); found {
 		if op.opType == OperationTypeDelete {
+			l.mu.Unlock()
 			return fmt.Errorf("attempting to update an object with primary key %q, that schedule to be deleted", primaryKey)
 		}
 
@@ -137,6 +155,7 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 
 		op.mergeData(data)
 		entry.Set(uniqueID, op)
+		l.mu.Unlock()
 		return nil
 	} else {
 		l.entriesCount++
@@ -147,6 +166,7 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 	}
 
 	entry.Set(uniqueID, l.newUpdateOperation(table, primaryKey, data, reversibleBlockNum))
+	l.mu.Unlock()
 	return nil
 }
 
@@ -162,12 +182,31 @@ func (l *Loader) Delete(tableName string, primaryKey map[string]string, reversib
 		l.logger.Debug("processing delete operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID))
 	}
 
+	// Backpressure: block if buffer is full
+	l.mu.Lock()
+	for {
+		total := 0
+		for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
+			total += pair.Value.Len()
+		}
+		if total < l.batchRowFlushInterval {
+			break
+		}
+		if l.cond != nil {
+			l.cond.Wait()
+		} else {
+			break
+		}
+	}
+
 	table, found := l.tables[tableName]
 	if !found {
+		l.mu.Unlock()
 		return fmt.Errorf("unknown table %q", tableName)
 	}
 
 	if len(table.primaryColumns) != 1 {
+		l.mu.Unlock()
 		return fmt.Errorf("trying to perform a DELETE operation but table %q don't have a primary key(s) set, this is not accepted", tableName)
 	}
 
@@ -194,5 +233,6 @@ func (l *Loader) Delete(tableName string, primaryKey map[string]string, reversib
 	}
 
 	entry.Set(uniqueID, l.newDeleteOperation(table, primaryKey, reversibleBlockNum))
+	l.mu.Unlock()
 	return nil
 }
