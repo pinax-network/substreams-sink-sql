@@ -163,6 +163,8 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		)
 
 		s.loader.FlushAsync(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
+		// Update lastAppliedBlockNum after triggering async flush
+		s.lastAppliedBlockNum = &data.Clock.Number
 	}
 
 	return nil
