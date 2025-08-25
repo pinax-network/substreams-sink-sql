@@ -26,6 +26,31 @@ type OrderedMap[K comparable, V any] struct {
 	*orderedmap.OrderedMap[K, V]
 }
 
+// newFlushLoader creates a minimal Loader used exclusively to perform a flush
+// using the provided entries snapshot. It intentionally does not copy
+// synchronization primitives.
+func (l *Loader) newFlushLoader(snapshot *OrderedMap[string, *OrderedMap[string, *Operation]]) *Loader {
+	return &Loader{
+		DB:                       l.DB,
+		database:                 l.database,
+		schema:                   l.schema,
+		entries:                  snapshot,
+		entriesCount:             l.entriesCount,
+		tables:                   l.tables,
+		cursorTable:              l.cursorTable,
+		handleReorgs:             l.handleReorgs,
+		batchBlockFlushInterval:  l.batchBlockFlushInterval,
+		batchRowFlushInterval:    l.batchRowFlushInterval,
+		liveBlockFlushInterval:   l.liveBlockFlushInterval,
+		moduleMismatchMode:       l.moduleMismatchMode,
+		maxFlushRetries:          l.maxFlushRetries,
+		sleepBetweenFlushRetries: l.sleepBetweenFlushRetries,
+		logger:                   l.logger,
+		tracer:                   l.tracer,
+		testTx:                   l.testTx,
+	}
+}
+
 // SetOnFlush sets an optional observer invoked on successful flush completion.
 // The callback receives the number of rows flushed and the flush duration.
 func (l *Loader) SetOnFlush(cb func(rows int, dur time.Duration)) {
@@ -231,6 +256,10 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 	snapshot := l.entries
 	l.entries = NewOrderedMap[string, *OrderedMap[string, *Operation]]()
 	l.activeFlushes++
+
+	// Build a lightweight loader for flushing while still under lock to avoid racy reads of fields.
+	flushLoader := l.newFlushLoader(snapshot)
+
 	l.mu.Unlock()
 
 	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes-1))
@@ -244,17 +273,13 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 			l.mu.Unlock()
 		}()
 
-		// Create a shallow copy loader that uses the snapshot for flushing
-		tl := *l
-		tl.entries = snapshot
-
 		// Disallow cancellation of the context to prevent holes in the data with parallel flushes
 		if l.maxParallelFlushes > 1 {
 			ctx = context.WithoutCancel(ctx)
 		}
 
 		start := time.Now()
-		rowFlushedCount, err := tl.Flush(ctx, outputModuleHash, cursor, lastFinalBlock)
+		rowFlushedCount, err := flushLoader.Flush(ctx, outputModuleHash, cursor, lastFinalBlock)
 		if err != nil {
 			l.logger.Warn("async flush failed after retries", zap.Error(err))
 			return
