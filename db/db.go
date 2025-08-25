@@ -253,40 +253,12 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 			ctx = context.WithoutCancel(ctx)
 		}
 
-		// Perform a single flush attempt with its own transaction (reusing existing logic but avoiding reset())
-		tx, err := l.BeginTx(ctx, nil)
-		if err != nil {
-			l.logger.Warn("async flush: failed to begin tx", zap.Error(err))
-			return
-		}
-		committed := false
-		// rollback defer - runs before cleanup defer
-		defer func() {
-			if !committed {
-				if err := tx.Rollback(); err != nil {
-					l.logger.Warn("async flush: rollback failed", zap.Error(err))
-				}
-			}
-		}()
-
 		start := time.Now()
-		rowFlushedCount, err := tl.getDialect().Flush(tx, ctx, &tl, outputModuleHash, lastFinalBlock)
+		rowFlushedCount, err := tl.Flush(ctx, outputModuleHash, cursor, lastFinalBlock)
 		if err != nil {
-			l.logger.Warn("async flush: dialect flush failed", zap.Error(err))
+			l.logger.Warn("async flush failed after retries", zap.Error(err))
 			return
 		}
-
-		// Update cursor for the snapshot
-		if err := l.UpdateCursor(ctx, tx, outputModuleHash, cursor); err != nil {
-			l.logger.Warn("async flush: update cursor failed", zap.Error(err))
-			return
-		}
-
-		if err := tx.Commit(); err != nil {
-			l.logger.Warn("async flush: commit failed", zap.Error(err))
-			return
-		}
-		committed = true
 
 		took := time.Since(start)
 		l.logger.Debug("async flush complete",

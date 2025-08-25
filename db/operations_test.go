@@ -68,7 +68,7 @@ func TestEscapeValues(t *testing.T) {
 		t.Skip(`PG_DSN not set, please specify PG_DSN to run this test, example: PG_DSN="psql://dev-node:insecure-change-me-in-prod@localhost:5432/dev-node?enable_incremental_sort=off&sslmode=disable"`)
 	}
 
-	dbLoader, err := NewLoader(dsn, 0, 0, 0, OnModuleHashMismatchIgnore, nil, zlog, tracer)
+	dbLoader, err := NewLoader(dsn, 0, 0, 0, 1, OnModuleHashMismatchIgnore, nil, zlog, tracer)
 	require.NoError(t, err)
 
 	tx, err := dbLoader.DB.Begin()
