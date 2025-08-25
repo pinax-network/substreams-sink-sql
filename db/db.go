@@ -221,10 +221,10 @@ func (l *Loader) WaitForAllFlushes() {
 
 // FlushAsync triggers a non-blocking flush. Blocks if the maximum number of parallel flushes is reached until a flush is completed.
 func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) bool {
-	l.logger.Info("async flush: starting flush", zap.Int("active_flushes", l.activeFlushes), zap.Uint64("last_final_block", lastFinalBlock))
+	l.logger.Debug("async flush: starting flush", zap.Int("active_flushes", l.activeFlushes), zap.Uint64("last_final_block", lastFinalBlock))
 	l.mu.Lock()
 	for l.activeFlushes >= l.maxParallelFlushes {
-		l.logger.Info("async flush: maximum number of parallel flushes reached, waiting for a flush to complete")
+		l.logger.Debug("async flush: maximum number of parallel flushes reached, waiting for a flush to complete")
 		l.cond.Wait()
 	}
 	// Snapshot entries and replace with a fresh buffer
@@ -233,7 +233,7 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 	l.activeFlushes++
 	l.mu.Unlock()
 
-	l.logger.Info("async flush started", zap.Int("active_flushes", l.activeFlushes-1))
+	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes-1))
 
 	go func() {
 		// cleanup defer
@@ -284,7 +284,7 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		committed = true
 
 		took := time.Since(start)
-		l.logger.Info("async flush complete",
+		l.logger.Debug("async flush complete",
 			zap.Int("row_count", rowFlushedCount),
 			zap.Duration("took", took))
 
