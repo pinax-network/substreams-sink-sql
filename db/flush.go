@@ -22,6 +22,9 @@ func (l *Loader) Flush(ctx context.Context, outputModuleHash string, cursor *sin
 				zap.Int("row_count", rowFlushedCount),
 				zap.Duration("took", time.Since(startAt)),
 			)
+			if l.onFlush != nil {
+				l.onFlush(rowFlushedCount, time.Since(startAt))
+			}
 			return rowFlushedCount, nil
 		}
 		l.logger.Warn("Flush attempt failed",

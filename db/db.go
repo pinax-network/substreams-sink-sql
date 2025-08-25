@@ -26,6 +26,12 @@ type OrderedMap[K comparable, V any] struct {
 	*orderedmap.OrderedMap[K, V]
 }
 
+// SetOnFlush sets an optional observer invoked on successful flush completion.
+// The callback receives the number of rows flushed and the flush duration.
+func (l *Loader) SetOnFlush(cb func(rows int, dur time.Duration)) {
+    l.onFlush = cb
+}
+
 func NewOrderedMap[K comparable, V any]() *OrderedMap[K, V] {
 	return &OrderedMap[K, V]{OrderedMap: orderedmap.New[K, V]()}
 }
@@ -62,6 +68,10 @@ type Loader struct {
 	cond               *sync.Cond
 	activeFlushes      int
 	maxParallelFlushes int
+
+	// onFlush is an optional observer called when a flush completes successfully.
+	// It receives the number of rows flushed and the total duration of the flush.
+	onFlush func(rows int, dur time.Duration)
 }
 
 func NewLoader(
@@ -267,9 +277,15 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		}
 		committed = true
 
+		took := time.Since(start)
 		l.logger.Info("async flush complete",
 			zap.Int("row_count", rowFlushedCount),
-			zap.Duration("took", time.Since(start)))
+			zap.Duration("took", took))
+
+		// Notify observer outside the lock
+		if l.onFlush != nil {
+			l.onFlush(rowFlushedCount, took)
+		}
 	}()
 
 	return true

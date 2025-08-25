@@ -32,7 +32,7 @@ type SQLSinker struct {
 }
 
 func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer) (*SQLSinker, error) {
-	return &SQLSinker{
+	s := &SQLSinker{
 		Shutter: shutter.New(),
 		Sinker:  sink,
 
@@ -42,7 +42,17 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 
 		stats:               NewStats(logger),
 		lastAppliedBlockNum: nil,
-	}, nil
+	}
+
+	// Register a flush observer to update metrics and stats for both sync and async flushes
+	loader.SetOnFlush(func(rows int, dur time.Duration) {
+		FlushCount.AddInt(1)
+		FlushedRowsCount.AddInt(rows)
+		FlushDuration.AddInt64(dur.Nanoseconds())
+		s.stats.RecordFlushDuration(dur)
+	})
+
+	return s, nil
 }
 
 func (s *SQLSinker) Run(ctx context.Context) {
@@ -128,6 +138,9 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		DatabaseChangesDuration.AddInt64(time.Since(applyStart).Nanoseconds())
 		DatabaseChangesCount.AddInt(len(dbChanges.TableChanges))
 	}
+	// Update stats with the current block for logging
+	s.stats.RecordBlock(cursor.Block())
+
 	if s.lastAppliedBlockNum == nil {
 		s.lastAppliedBlockNum = &data.Clock.Number
 	}
