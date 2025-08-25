@@ -205,8 +205,10 @@ func (l *Loader) WaitForAllFlushes() {
 
 // FlushAsync triggers a non-blocking flush. Blocks if the maximum number of parallel flushes is reached until a flush is completed.
 func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) bool {
+	l.logger.Info("async flush: starting flush", zap.Int("active_flushes", l.activeFlushes), zap.Uint64("last_final_block", lastFinalBlock))
 	l.mu.Lock()
 	for l.activeFlushes >= l.maxParallelFlushes {
+		l.logger.Info("async flush: maximum number of parallel flushes reached, waiting for a flush to complete")
 		l.cond.Wait()
 	}
 	// Snapshot entries and replace with a fresh buffer
