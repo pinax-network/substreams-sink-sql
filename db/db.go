@@ -248,6 +248,11 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		tl := *l
 		tl.entries = snapshot
 
+		// Disallow cancellation of the context to prevent holes in the data with parallel flushes
+		if l.maxParallelFlushes > 1 {
+			ctx = context.WithoutCancel(ctx)
+		}
+
 		// Perform a single flush attempt with its own transaction (reusing existing logic but avoiding reset())
 		tx, err := l.BeginTx(ctx, nil)
 		if err != nil {

@@ -79,12 +79,13 @@ func (s *SQLSinker) Run(ctx context.Context) {
 
 	s.Sinker.OnTerminating(s.Shutdown)
 	s.OnTerminating(func(err error) {
-		s.stats.LogNow()
 		s.logger.Info("sql sinker terminating", zap.Stringer("last_block_written", s.stats.lastBlock))
+		s.loader.WaitForAllFlushes()
+		s.stats.LogNow()
+		s.stats.Close()
 		s.Sinker.Shutdown(err)
 	})
 
-	s.OnTerminating(func(_ error) { s.stats.Close() })
 	s.stats.OnTerminated(func(err error) { s.Shutdown(err) })
 
 	logEach := 15 * time.Second
@@ -225,6 +226,11 @@ func (s *SQLSinker) HandleBlockRangeCompletion(ctx context.Context, cursor *sink
 	s.logger.Info("stream completed, waiting for async flushes to finish", zap.Stringer("block", cursor.Block()))
 	s.loader.WaitForAllFlushes()
 
+	// If the upstream context has been canceled, skip the final flush
+	if err := ctx.Err(); err != nil {
+		s.logger.Warn("completion flush skipped: context canceled, exiting without final flush", zap.Error(err))
+		return nil
+	}
 	s.logger.Info("stream completed, flushing remaining entries to database", zap.Stringer("block", cursor.Block()))
 	_, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, cursor.Block().Num())
 	if err != nil {
