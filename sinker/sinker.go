@@ -111,7 +111,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		// We do not use UnmarshalTo here because we need to parse an older proto type and
 		// UnmarshalTo enforces the type check. So we check manually the `TypeUrl` above and we use
 		// `Unmarshal` instead which only deals with the bytes value.
-		
+
 		// Measure protobuf decoding performance
 		ProtobufMessageSize.AddInt(len(mapOutput.Value))
 		decodeStart := time.Now()
@@ -143,10 +143,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 			zap.Bool("row_flush_interval_reached", rowFlushNeeded),
 		)
 
-		started := s.loader.FlushAsync(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
-		if !started {
-			// A flush is already in progress; nothing to do.
-		}
+		s.loader.FlushAsync(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
 	}
 
 	return nil
@@ -212,7 +209,10 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 
 func (s *SQLSinker) HandleBlockRangeCompletion(ctx context.Context, cursor *sink.Cursor) error {
 
-	s.logger.Info("stream completed, flushing to database", zap.Stringer("block", cursor.Block()))
+	s.logger.Info("stream completed, waiting for async flushes to finish", zap.Stringer("block", cursor.Block()))
+	s.loader.WaitForAllFlushes()
+
+	s.logger.Info("stream completed, flushing remaining entries to database", zap.Stringer("block", cursor.Block()))
 	_, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, cursor.Block().Num())
 	if err != nil {
 		return fmt.Errorf("failed to flush %s block on completion: %w", cursor.Block(), err)

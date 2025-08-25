@@ -193,15 +193,21 @@ func (l *Loader) FlushNeeded() bool {
 	return totalRows > l.batchRowFlushInterval
 }
 
-// FlushAsync triggers a non-blocking flush. Returns true if a flush was started.
+// WaitForAllFlushes blocks until there are no in-flight async flushes.
+func (l *Loader) WaitForAllFlushes() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for l.activeFlushes > 0 {
+		l.cond.Wait()
+	}
+}
+
+// FlushAsync triggers a non-blocking flush. Blocks if the maximum number of parallel flushes is reached until a flush is completed.
 func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) bool {
 	l.mu.Lock()
 	for l.activeFlushes >= l.maxParallelFlushes {
-		if l.cond != nil {
-			l.cond.Wait()
-		} else {
-			break
-		}
+		l.cond.Wait()
 	}
 	// Snapshot entries and replace with a fresh buffer
 	snapshot := l.entries
@@ -209,9 +215,17 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 	l.activeFlushes++
 	l.mu.Unlock()
 
-	l.logger.Info("async flush started", zap.Int("active_flushes", l.activeFlushes), zap.Int("rows_to_flush", snapshot.Len()))
+	l.logger.Info("async flush started", zap.Int("active_flushes", l.activeFlushes-1))
 
 	go func() {
+		// cleanup defer
+		defer func() {
+			l.mu.Lock()
+			l.activeFlushes--
+			l.cond.Broadcast()
+			l.mu.Unlock()
+		}()
+
 		// Create a shallow copy loader that uses the snapshot for flushing
 		tl := *l
 		tl.entries = snapshot
@@ -220,16 +234,10 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		tx, err := l.BeginTx(ctx, nil)
 		if err != nil {
 			l.logger.Warn("async flush: failed to begin tx", zap.Error(err))
-			l.mu.Lock()
-			l.activeFlushes--
-			if l.cond != nil {
-				l.cond.Broadcast()
-			}
-			l.mu.Unlock()
 			return
 		}
-		// Ensure rollback on error
 		committed := false
+		// rollback defer - runs before cleanup defer
 		defer func() {
 			if !committed {
 				if err := tx.Rollback(); err != nil {
@@ -242,35 +250,17 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		rowFlushedCount, err := tl.getDialect().Flush(tx, ctx, &tl, outputModuleHash, lastFinalBlock)
 		if err != nil {
 			l.logger.Warn("async flush: dialect flush failed", zap.Error(err))
-			l.mu.Lock()
-			l.activeFlushes--
-			if l.cond != nil {
-				l.cond.Broadcast()
-			}
-			l.mu.Unlock()
 			return
 		}
 
 		// Update cursor for the snapshot
 		if err := l.UpdateCursor(ctx, tx, outputModuleHash, cursor); err != nil {
 			l.logger.Warn("async flush: update cursor failed", zap.Error(err))
-			l.mu.Lock()
-			l.activeFlushes--
-			if l.cond != nil {
-				l.cond.Broadcast()
-			}
-			l.mu.Unlock()
 			return
 		}
 
 		if err := tx.Commit(); err != nil {
 			l.logger.Warn("async flush: commit failed", zap.Error(err))
-			l.mu.Lock()
-			l.activeFlushes--
-			if l.cond != nil {
-				l.cond.Broadcast()
-			}
-			l.mu.Unlock()
 			return
 		}
 		committed = true
@@ -278,13 +268,6 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		l.logger.Info("async flush complete",
 			zap.Int("row_count", rowFlushedCount),
 			zap.Duration("took", time.Since(start)))
-
-		l.mu.Lock()
-		l.activeFlushes--
-		if l.cond != nil {
-			l.cond.Broadcast()
-		}
-		l.mu.Unlock()
 	}()
 
 	return true

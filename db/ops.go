@@ -13,7 +13,8 @@ import (
 func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
 	uniqueID := createRowUniqueID(primaryKey)
 
-    l.mu.Lock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	if l.tracer.Enabled() {
 		l.logger.Debug("processing insert operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
@@ -21,7 +22,6 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 
 	table, found := l.tables[tableName]
 	if !found {
-		l.mu.Unlock()
 		return fmt.Errorf("unknown table %q", tableName)
 	}
 
@@ -36,7 +36,6 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 	}
 
 	if _, found := entry.Get(uniqueID); found && !l.getDialect().AllowPkDuplicates() {
-		l.mu.Unlock()
 		return fmt.Errorf("attempting to insert in table %q a primary key %q, that is already scheduled for insertion, insert should only be called once for a given primary key", tableName, primaryKey)
 	}
 
@@ -53,7 +52,6 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 
 	entry.Set(uniqueID, l.newInsertOperation(table, primaryKey, data, reversibleBlockNum))
 	l.entriesCount++
-	l.mu.Unlock()
 	return nil
 }
 
@@ -96,10 +94,10 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 	}
 
 	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	table, found := l.tables[tableName]
 	if !found {
-		l.mu.Unlock()
 		return fmt.Errorf("unknown table %q", tableName)
 	}
 
@@ -115,7 +113,6 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 
 	if op, found := entry.Get(uniqueID); found {
 		if op.opType == OperationTypeDelete {
-			l.mu.Unlock()
 			return fmt.Errorf("attempting to update an object with primary key %q, that schedule to be deleted", primaryKey)
 		}
 
@@ -125,7 +122,6 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 
 		op.mergeData(data)
 		entry.Set(uniqueID, op)
-		l.mu.Unlock()
 		return nil
 	} else {
 		l.entriesCount++
@@ -136,7 +132,6 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 	}
 
 	entry.Set(uniqueID, l.newUpdateOperation(table, primaryKey, data, reversibleBlockNum))
-	l.mu.Unlock()
 	return nil
 }
 
@@ -152,31 +147,15 @@ func (l *Loader) Delete(tableName string, primaryKey map[string]string, reversib
 		l.logger.Debug("processing delete operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID))
 	}
 
-	// Backpressure: block if buffer is full
 	l.mu.Lock()
-	for {
-		total := 0
-		for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
-			total += pair.Value.Len()
-		}
-		if total < l.batchRowFlushInterval {
-			break
-		}
-		if l.cond != nil {
-			l.cond.Wait()
-		} else {
-			break
-		}
-	}
+	defer l.mu.Unlock()
 
 	table, found := l.tables[tableName]
 	if !found {
-		l.mu.Unlock()
 		return fmt.Errorf("unknown table %q", tableName)
 	}
 
 	if len(table.primaryColumns) != 1 {
-		l.mu.Unlock()
 		return fmt.Errorf("trying to perform a DELETE operation but table %q don't have a primary key(s) set, this is not accepted", tableName)
 	}
 
@@ -203,6 +182,5 @@ func (l *Loader) Delete(tableName string, primaryKey map[string]string, reversib
 	}
 
 	entry.Set(uniqueID, l.newDeleteOperation(table, primaryKey, reversibleBlockNum))
-	l.mu.Unlock()
 	return nil
 }
