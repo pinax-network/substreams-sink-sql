@@ -29,7 +29,7 @@ type OrderedMap[K comparable, V any] struct {
 // SetOnFlush sets an optional observer invoked on successful flush completion.
 // The callback receives the number of rows flushed and the flush duration.
 func (l *Loader) SetOnFlush(cb func(rows int, dur time.Duration)) {
-    l.onFlush = cb
+	l.onFlush = cb
 }
 
 func NewOrderedMap[K comparable, V any]() *OrderedMap[K, V] {
@@ -79,6 +79,7 @@ func NewLoader(
 	batchBlockFlushInterval int,
 	batchRowFlushInterval int,
 	liveBlockFlushInterval int,
+	maxParallelFlushes int,
 	moduleMismatchMode OnModuleHashMismatch,
 	handleReorgs *bool,
 	logger *zap.Logger,
@@ -92,6 +93,10 @@ func NewLoader(
 	db, err := sql.Open(dsn.driver, dsn.ConnString())
 	if err != nil {
 		return nil, fmt.Errorf("open db connection: %w", err)
+	}
+
+	if maxParallelFlushes < 1 {
+		maxParallelFlushes = 1
 	}
 
 	l := &Loader{
@@ -108,7 +113,7 @@ func NewLoader(
 		moduleMismatchMode:       moduleMismatchMode,
 		logger:                   logger,
 		tracer:                   tracer,
-		maxParallelFlushes:       3,
+		maxParallelFlushes:       maxParallelFlushes,
 	}
 	l.mu = sync.Mutex{}
 	l.cond = sync.NewCond(&l.mu)
@@ -132,6 +137,7 @@ func NewLoader(
 		zap.Int("batch_block_flush_interval", batchBlockFlushInterval),
 		zap.Int("batch_row_flush_interval", batchRowFlushInterval),
 		zap.Int("live_block_flush_interval", liveBlockFlushInterval),
+		zap.Int("max_parallel_flushes", maxParallelFlushes),
 		zap.String("driver", dsn.driver),
 		zap.String("database", dsn.database),
 		zap.String("schema", dsn.schema),

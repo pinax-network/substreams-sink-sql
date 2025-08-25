@@ -60,12 +60,13 @@ func newDBLoader(
 	batchBlockFlushInterval int,
 	batchRowFlushInterval int,
 	liveBlockFlushInterval int,
+	maxParallelFlushes int,
 	handleReorgs bool,
 ) (*db.Loader, error) {
 	moduleMismatchMode, err := db.ParseOnModuleHashMismatch(sflags.MustGetString(cmd, onModuleHashMistmatchFlag))
 	cli.NoError(err, "invalid mistmatch mode")
 
-	dbLoader, err := db.NewLoader(psqlDSN, batchBlockFlushInterval, batchRowFlushInterval, liveBlockFlushInterval, moduleMismatchMode, &handleReorgs, zlog, tracer)
+	dbLoader, err := db.NewLoader(psqlDSN, batchBlockFlushInterval, batchRowFlushInterval, liveBlockFlushInterval, maxParallelFlushes, moduleMismatchMode, &handleReorgs, zlog, tracer)
 	if err != nil {
 		return nil, fmt.Errorf("new psql loader: %w", err)
 	}
@@ -94,7 +95,7 @@ func AddCommonSinkerFlags(flags *pflag.FlagSet) {
 		- If 'warn' is used, it does the same as 'ignore' but it will log a warning message when it happens.
 		- If 'ignore' is set, we pick the cursor at the highest block number and use it as the starting point. Subsequent
 		updates to the cursor will overwrite the module hash in the database.
-	`))
+	    `))
 }
 
 func readBlockRangeArgument(in string) (blockRange *bstream.Range, err error) {
