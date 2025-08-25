@@ -57,6 +57,12 @@ func (l *Loader) SetOnFlush(cb func(rows int, dur time.Duration)) {
 	l.onFlush = cb
 }
 
+// SetOnFlushError sets an optional observer invoked when an async flush fails.
+// This enables the caller to handle shutdown or retries.
+func (l *Loader) SetOnFlushError(cb func(err error)) {
+	l.onFlushError = cb
+}
+
 func NewOrderedMap[K comparable, V any]() *OrderedMap[K, V] {
 	return &OrderedMap[K, V]{OrderedMap: orderedmap.New[K, V]()}
 }
@@ -97,6 +103,10 @@ type Loader struct {
 	// onFlush is an optional observer called when a flush completes successfully.
 	// It receives the number of rows flushed and the total duration of the flush.
 	onFlush func(rows int, dur time.Duration)
+
+	// onFlushError is an optional observer invoked when an async flush fails.
+	// If set, it should trigger appropriate shutdown from the caller side.
+	onFlushError func(err error)
 }
 
 func NewLoader(
@@ -245,7 +255,7 @@ func (l *Loader) WaitForAllFlushes() {
 }
 
 // FlushAsync triggers a non-blocking flush. Blocks if the maximum number of parallel flushes is reached until a flush is completed.
-func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) bool {
+func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) {
 	l.logger.Debug("async flush: starting flush", zap.Int("active_flushes", l.activeFlushes), zap.Uint64("last_final_block", lastFinalBlock))
 	l.mu.Lock()
 	for l.activeFlushes >= l.maxParallelFlushes {
@@ -262,7 +272,7 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 
 	l.mu.Unlock()
 
-	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes-1))
+	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes))
 
 	go func() {
 		// cleanup defer
@@ -282,6 +292,9 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		rowFlushedCount, err := flushLoader.Flush(ctx, outputModuleHash, cursor, lastFinalBlock)
 		if err != nil {
 			l.logger.Warn("async flush failed after retries", zap.Error(err))
+			if l.onFlushError != nil {
+				l.onFlushError(err)
+			}
 			return
 		}
 
@@ -295,8 +308,6 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 			l.onFlush(rowFlushedCount, took)
 		}
 	}()
-
-	return true
 }
 
 func (l *Loader) LoadTables() error {
