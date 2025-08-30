@@ -95,7 +95,6 @@ type Loader struct {
 	testTx *TestTx // used for testing: if non-nil, 'loader.BeginTx()' will return this object instead of a real *sql.Tx
 
 	// async flush
-	mu                 sync.Mutex
 	cond               *sync.Cond
 	activeFlushes      int
 	maxParallelFlushes int
@@ -150,8 +149,7 @@ func NewLoader(
 		tracer:                   tracer,
 		maxParallelFlushes:       maxParallelFlushes,
 	}
-	l.mu = sync.Mutex{}
-	l.cond = sync.NewCond(&l.mu)
+	l.cond = sync.NewCond(&sync.Mutex{})
 	_, err = l.tryDialect()
 	if err != nil {
 		return nil, fmt.Errorf("dialect not found: %s", err)
@@ -234,8 +232,8 @@ func (l *Loader) GetPrimaryKey(tableName string, pk string) (map[string]string, 
 }
 
 func (l *Loader) FlushNeeded() bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
 	totalRows := 0
 	// todo keep a running count when inserting/deleting rows directly
 	for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
@@ -246,8 +244,8 @@ func (l *Loader) FlushNeeded() bool {
 
 // WaitForAllFlushes blocks until there are no in-flight async flushes.
 func (l *Loader) WaitForAllFlushes() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
 
 	for l.activeFlushes > 0 {
 		l.cond.Wait()
@@ -257,7 +255,7 @@ func (l *Loader) WaitForAllFlushes() {
 // FlushAsync triggers a non-blocking flush. Blocks if the maximum number of parallel flushes is reached until a flush is completed.
 func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) {
 	l.logger.Debug("async flush: starting flush", zap.Int("active_flushes", l.activeFlushes), zap.Uint64("last_final_block", lastFinalBlock))
-	l.mu.Lock()
+	l.cond.L.Lock()
 	for l.activeFlushes >= l.maxParallelFlushes {
 		l.logger.Debug("async flush: maximum number of parallel flushes reached, waiting for a flush to complete")
 		l.cond.Wait()
@@ -270,17 +268,17 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 	// Build a lightweight loader for flushing while still under lock to avoid racy reads of fields.
 	flushLoader := l.newFlushLoader(snapshot)
 
-	l.mu.Unlock()
+	l.cond.L.Unlock()
 
 	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes))
 
 	go func() {
 		// cleanup defer
 		defer func() {
-			l.mu.Lock()
+			l.cond.L.Lock()
 			l.activeFlushes--
 			l.cond.Broadcast()
-			l.mu.Unlock()
+			l.cond.L.Unlock()
 		}()
 
 		// Disallow cancellation of the context to prevent holes in the data with parallel flushes

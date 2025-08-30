@@ -13,8 +13,8 @@ import (
 func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
 	uniqueID := createRowUniqueID(primaryKey)
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
 
 	if l.tracer.Enabled() {
 		l.logger.Debug("processing insert operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
@@ -93,8 +93,8 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 		l.logger.Debug("processing update operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
 
 	table, found := l.tables[tableName]
 	if !found {
@@ -147,8 +147,8 @@ func (l *Loader) Delete(tableName string, primaryKey map[string]string, reversib
 		l.logger.Debug("processing delete operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID))
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
 
 	table, found := l.tables[tableName]
 	if !found {
