@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
+
+	"sync"
 
 	"github.com/jimsmart/schema"
 	"github.com/streamingfast/logging"
+	sink "github.com/streamingfast/substreams-sink"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -20,6 +24,43 @@ var CLICKHOUSE_CLUSTER = ""
 // Make the typing a bit easier
 type OrderedMap[K comparable, V any] struct {
 	*orderedmap.OrderedMap[K, V]
+}
+
+// newFlushLoader creates a minimal Loader used exclusively to perform a flush
+// using the provided entries snapshot. It intentionally does not copy
+// synchronization primitives.
+func (l *Loader) newFlushLoader(snapshot *OrderedMap[string, *OrderedMap[string, *Operation]]) *Loader {
+	return &Loader{
+		DB:                       l.DB,
+		database:                 l.database,
+		schema:                   l.schema,
+		entries:                  snapshot,
+		entriesCount:             l.entriesCount,
+		tables:                   l.tables,
+		cursorTable:              l.cursorTable,
+		handleReorgs:             l.handleReorgs,
+		batchBlockFlushInterval:  l.batchBlockFlushInterval,
+		batchRowFlushInterval:    l.batchRowFlushInterval,
+		liveBlockFlushInterval:   l.liveBlockFlushInterval,
+		moduleMismatchMode:       l.moduleMismatchMode,
+		maxFlushRetries:          l.maxFlushRetries,
+		sleepBetweenFlushRetries: l.sleepBetweenFlushRetries,
+		logger:                   l.logger,
+		tracer:                   l.tracer,
+		testTx:                   l.testTx,
+	}
+}
+
+// SetOnFlush sets an optional observer invoked on successful flush completion.
+// The callback receives the number of rows flushed and the flush duration.
+func (l *Loader) SetOnFlush(cb func(rows int, dur time.Duration)) {
+	l.onFlush = cb
+}
+
+// SetOnFlushError sets an optional observer invoked when an async flush fails.
+// This enables the caller to handle shutdown or retries.
+func (l *Loader) SetOnFlushError(cb func(err error)) {
+	l.onFlushError = cb
 }
 
 func NewOrderedMap[K comparable, V any]() *OrderedMap[K, V] {
@@ -52,6 +93,19 @@ type Loader struct {
 	tracer logging.Tracer
 
 	testTx *TestTx // used for testing: if non-nil, 'loader.BeginTx()' will return this object instead of a real *sql.Tx
+
+	// async flush
+	cond               *sync.Cond
+	activeFlushes      int
+	maxParallelFlushes int
+
+	// onFlush is an optional observer called when a flush completes successfully.
+	// It receives the number of rows flushed and the total duration of the flush.
+	onFlush func(rows int, dur time.Duration)
+
+	// onFlushError is an optional observer invoked when an async flush fails.
+	// If set, it should trigger appropriate shutdown from the caller side.
+	onFlushError func(err error)
 }
 
 func NewLoader(
@@ -59,6 +113,7 @@ func NewLoader(
 	batchBlockFlushInterval int,
 	batchRowFlushInterval int,
 	liveBlockFlushInterval int,
+	maxParallelFlushes int,
 	moduleMismatchMode OnModuleHashMismatch,
 	handleReorgs *bool,
 	logger *zap.Logger,
@@ -72,6 +127,10 @@ func NewLoader(
 	db, err := sql.Open(dsn.driver, dsn.ConnString())
 	if err != nil {
 		return nil, fmt.Errorf("open db connection: %w", err)
+	}
+
+	if maxParallelFlushes < 1 {
+		maxParallelFlushes = 1
 	}
 
 	l := &Loader{
@@ -88,7 +147,9 @@ func NewLoader(
 		moduleMismatchMode:       moduleMismatchMode,
 		logger:                   logger,
 		tracer:                   tracer,
+		maxParallelFlushes:       maxParallelFlushes,
 	}
+	l.cond = sync.NewCond(&sync.Mutex{})
 	_, err = l.tryDialect()
 	if err != nil {
 		return nil, fmt.Errorf("dialect not found: %s", err)
@@ -109,6 +170,7 @@ func NewLoader(
 		zap.Int("batch_block_flush_interval", batchBlockFlushInterval),
 		zap.Int("batch_row_flush_interval", batchRowFlushInterval),
 		zap.Int("live_block_flush_interval", liveBlockFlushInterval),
+		zap.Int("max_parallel_flushes", maxParallelFlushes),
 		zap.String("driver", dsn.driver),
 		zap.String("database", dsn.database),
 		zap.String("schema", dsn.schema),
@@ -150,13 +212,100 @@ func (l *Loader) LiveBlockFlushInterval() int {
 	return l.liveBlockFlushInterval
 }
 
+func (l *Loader) GetPrimaryKey(tableName string, pk string) (map[string]string, error) {
+	table, found := l.tables[tableName]
+	if !found {
+		return nil, fmt.Errorf("unknown table %q", tableName)
+	}
+	if len(table.primaryColumns) == 1 {
+		return map[string]string{table.primaryColumns[0].name: pk}, nil
+	}
+	parts := strings.Split(pk, "/")
+	if len(parts) != len(table.primaryColumns) {
+		return nil, fmt.Errorf("composite primary key value count mismatch for table %q: got %d parts, expected %d", tableName, len(parts), len(table.primaryColumns))
+	}
+	res := make(map[string]string, len(parts))
+	for i, col := range table.primaryColumns {
+		res[col.name] = parts[i]
+	}
+	return res, nil
+}
+
 func (l *Loader) FlushNeeded() bool {
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
 	totalRows := 0
 	// todo keep a running count when inserting/deleting rows directly
 	for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
 		totalRows += pair.Value.Len()
 	}
 	return totalRows > l.batchRowFlushInterval
+}
+
+// WaitForAllFlushes blocks until there are no in-flight async flushes.
+func (l *Loader) WaitForAllFlushes() {
+	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
+
+	for l.activeFlushes > 0 {
+		l.cond.Wait()
+	}
+}
+
+// FlushAsync triggers a non-blocking flush. Blocks if the maximum number of parallel flushes is reached until a flush is completed.
+func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) {
+	l.logger.Debug("async flush: starting flush", zap.Int("active_flushes", l.activeFlushes), zap.Uint64("last_final_block", lastFinalBlock))
+	l.cond.L.Lock()
+	for l.activeFlushes >= l.maxParallelFlushes {
+		l.logger.Debug("async flush: maximum number of parallel flushes reached, waiting for a flush to complete")
+		l.cond.Wait()
+	}
+	// Snapshot entries and replace with a fresh buffer
+	snapshot := l.entries
+	l.entries = NewOrderedMap[string, *OrderedMap[string, *Operation]]()
+	l.activeFlushes++
+
+	// Build a lightweight loader for flushing while still under lock to avoid racy reads of fields.
+	flushLoader := l.newFlushLoader(snapshot)
+
+	l.cond.L.Unlock()
+
+	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes))
+
+	go func() {
+		// cleanup defer
+		defer func() {
+			l.cond.L.Lock()
+			l.activeFlushes--
+			l.cond.Broadcast()
+			l.cond.L.Unlock()
+		}()
+
+		// Disallow cancellation of the context to prevent holes in the data with parallel flushes
+		if l.maxParallelFlushes > 1 {
+			ctx = context.WithoutCancel(ctx)
+		}
+
+		start := time.Now()
+		rowFlushedCount, err := flushLoader.Flush(ctx, outputModuleHash, cursor, lastFinalBlock)
+		if err != nil {
+			l.logger.Warn("async flush failed after retries", zap.Error(err))
+			if l.onFlushError != nil {
+				l.onFlushError(err)
+			}
+			return
+		}
+
+		took := time.Since(start)
+		l.logger.Debug("async flush complete",
+			zap.Int("row_count", rowFlushedCount),
+			zap.Duration("took", took))
+
+		// Notify observer outside the lock
+		if l.onFlush != nil {
+			l.onFlush(rowFlushedCount, took)
+		}
+	}()
 }
 
 func (l *Loader) LoadTables() error {
