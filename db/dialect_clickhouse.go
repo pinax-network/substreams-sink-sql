@@ -30,8 +30,8 @@ var (
 	createDbPattern               = regexp.MustCompile(`(?i)^\s*CREATE\s+(DATABASE|SCHEMA)\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
 	createTablePattern            = regexp.MustCompile(`(?i)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
 	createMaterializedViewPattern = regexp.MustCompile(`(?i)^\s*CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
-	createViewPattern             = regexp.MustCompile(`(?i)^\s*CREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
-	createFunctionPattern         = regexp.MustCompile(`(?i)^\s*CREATE\s+FUNCTION\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createAnyViewPattern          = regexp.MustCompile(`(?i)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
+	createAnyFunctionPattern      = regexp.MustCompile(`(?i)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
 	alterTablePattern             = regexp.MustCompile(`(?i)^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?` + identifierPattern)
 	mergeTreeEnginePattern        = regexp.MustCompile(`(?i)(ENGINE\s*=\s*)([A-Za-z]*MergeTree)(\(|\s+|;|$)`)
 )
@@ -205,22 +205,22 @@ func patchClickhouseQuery(sql, clusterName string) (string, string) {
 		sql = replaceEngineWithReplicated(sql)
 	}
 
-	// CREATE VIEW
-	if matches := createViewPattern.FindStringSubmatch(sql); matches != nil {
-		stmtType = "CREATE VIEW"
+	// CREATE VIEW (plain or OR REPLACE) - normalize to CREATE OR REPLACE VIEW ... ON CLUSTER
+	if matches := createAnyViewPattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "CREATE OR REPLACE VIEW"
 		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
-			sql = createViewPattern.ReplaceAllString(sql,
-				fmt.Sprintf("CREATE VIEW IF NOT EXISTS $1 ON CLUSTER %s",
+			sql = createAnyViewPattern.ReplaceAllString(sql,
+				fmt.Sprintf("CREATE OR REPLACE VIEW $1 ON CLUSTER %s",
 					EscapeIdentifier(clusterName)))
 		}
 	}
 
-	// CREATE FUNCTION
-	if matches := createFunctionPattern.FindStringSubmatch(sql); matches != nil {
-		stmtType = "CREATE FUNCTION"
+	// CREATE FUNCTION (plain or OR REPLACE) - normalize to CREATE OR REPLACE FUNCTION ... ON CLUSTER
+	if matches := createAnyFunctionPattern.FindStringSubmatch(sql); matches != nil {
+		stmtType = "CREATE OR REPLACE FUNCTION"
 		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
-			sql = createFunctionPattern.ReplaceAllString(sql,
-				fmt.Sprintf("CREATE FUNCTION IF NOT EXISTS $1 ON CLUSTER %s",
+			sql = createAnyFunctionPattern.ReplaceAllString(sql,
+				fmt.Sprintf("CREATE OR REPLACE FUNCTION $1 ON CLUSTER %s",
 					EscapeIdentifier(clusterName)))
 		}
 	}
