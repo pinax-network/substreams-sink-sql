@@ -207,20 +207,20 @@ func patchClickhouseQuery(sql, clusterName string) (string, string) {
 
 	// CREATE VIEW (plain or OR REPLACE) - normalize to CREATE OR REPLACE VIEW ... ON CLUSTER
 	if matches := createAnyViewPattern.FindStringSubmatch(sql); matches != nil {
-		stmtType = "CREATE OR REPLACE VIEW"
+		stmtType = "CREATE VIEW"
 		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
 			sql = createAnyViewPattern.ReplaceAllString(sql,
-				fmt.Sprintf("CREATE OR REPLACE VIEW $1 ON CLUSTER %s",
+				fmt.Sprintf("CREATE VIEW IF NOT EXISTS $1 ON CLUSTER %s",
 					EscapeIdentifier(clusterName)))
 		}
 	}
 
 	// CREATE FUNCTION (plain or OR REPLACE) - normalize to CREATE OR REPLACE FUNCTION ... ON CLUSTER
 	if matches := createAnyFunctionPattern.FindStringSubmatch(sql); matches != nil {
-		stmtType = "CREATE OR REPLACE FUNCTION"
+		stmtType = "CREATE FUNCTION"
 		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
 			sql = createAnyFunctionPattern.ReplaceAllString(sql,
-				fmt.Sprintf("CREATE OR REPLACE FUNCTION $1 ON CLUSTER %s",
+				fmt.Sprintf("CREATE FUNCTION IF NOT EXISTS $1 ON CLUSTER %s",
 					EscapeIdentifier(clusterName)))
 		}
 	}
