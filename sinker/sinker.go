@@ -165,6 +165,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		s.loader.FlushAsync(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
 
 		s.lastAppliedBlockNum = &data.Clock.Number
+		ActiveFlushes.SetUint64(uint64(s.loader.GetActiveFlushesNum()))
 		HeadBlockTimeDrift.SetBlockTime(data.Clock.GetTimestamp().AsTime())
 		HeadBlockNumber.SetUint64(data.Clock.GetNumber())
 	}
