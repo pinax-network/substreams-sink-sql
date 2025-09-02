@@ -188,7 +188,7 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		{
 			name:             "CREATE FUNCTION - with quotes",
 			input:            "CREATE FUNCTION \"my func\" AS (a, b) -> a + b",
-			expectedOutput:   "CREATE FUNCTION \"my func\" ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
+			expectedOutput:   "CREATE OR REPLACE FUNCTION \"my func\" ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
 			expectedStmtType: "CREATE FUNCTION",
 		},
 		{
@@ -200,7 +200,7 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		{
 			name:             "CREATE FUNCTION IF NOT EXISTS- simple",
 			input:            "CREATE FUNCTION IF NOT EXISTS myfunc AS (a, b) -> a + b",
-			expectedOutput:   "CREATE FUNCTION IF NOT EXISTS myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
+			expectedOutput:   "CREATE OR REPLACE FUNCTION myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
 			expectedStmtType: "CREATE FUNCTION",
 		},
 

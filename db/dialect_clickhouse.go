@@ -216,7 +216,7 @@ func patchClickhouseQuery(sql, clusterName string) (string, string) {
 		stmtType = "CREATE FUNCTION"
 		if !strings.Contains(strings.ToUpper(sql), "ON CLUSTER") {
 			sql = createAnyFunctionPattern.ReplaceAllString(sql,
-				fmt.Sprintf("CREATE$1 FUNCTION$2 $3 ON CLUSTER %s",
+				fmt.Sprintf("CREATE OR REPLACE FUNCTION $3 ON CLUSTER %s",
 					EscapeIdentifier(clusterName)))
 		}
 	}
