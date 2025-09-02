@@ -78,7 +78,7 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		{
 			name:             "CREATE DATABASE - no cluster",
 			input:            "CREATE DATABASE mydb",
-			expectedOutput:   "CREATE DATABASE IF NOT EXISTS mydb ON CLUSTER \"test_cluster\"",
+			expectedOutput:   "CREATE DATABASE mydb ON CLUSTER \"test_cluster\"",
 			expectedStmtType: "CREATE DATABASE",
 		},
 		{
@@ -89,7 +89,7 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		},
 		{
 			name:             "CREATE SCHEMA",
-			input:            "CREATE SCHEMA my_schema",
+			input:            "CREATE SCHEMA IF NOT EXISTS my_schema",
 			expectedOutput:   "CREATE SCHEMA IF NOT EXISTS my_schema ON CLUSTER \"test_cluster\"",
 			expectedStmtType: "CREATE DATABASE",
 		},
@@ -103,14 +103,14 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		// CREATE TABLE tests
 		{
 			name:             "CREATE TABLE - simple",
-			input:            "CREATE TABLE mytable (id UInt32)",
+			input:            "CREATE TABLE IF NOT EXISTS mytable (id UInt32)",
 			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32)",
 			expectedStmtType: "CREATE TABLE",
 		},
 		{
 			name:             "CREATE TABLE with quotes - with IF NOT EXISTS",
-			input:            "CREATE TABLE IF NOT EXISTS 'mytable' (id UInt32)",
-			expectedOutput:   "CREATE TABLE IF NOT EXISTS 'mytable' ON CLUSTER \"test_cluster\" (id UInt32)",
+			input:            "CREATE TABLE 'mytable' (id UInt32)",
+			expectedOutput:   "CREATE TABLE 'mytable' ON CLUSTER \"test_cluster\" (id UInt32)",
 			expectedStmtType: "CREATE TABLE",
 		},
 		{
@@ -122,24 +122,24 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		{
 			name:             "CREATE TABLE - with MergeTree engine with params",
 			input:            "CREATE TABLE mytable (id UInt32) ENGINE = MergeTree() ORDER BY id",
-			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
+			expectedOutput:   "CREATE TABLE mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
 			expectedStmtType: "CREATE TABLE",
 		},
 		{
 			name:             "CREATE TABLE - with already Replicated engine",
 			input:            "CREATE TABLE mytable (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
-			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
+			expectedOutput:   "CREATE TABLE mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree() ORDER BY id",
 			expectedStmtType: "CREATE TABLE",
 		},
 		{
 			name:             "CREATE TABLE - with MergeTree engine without params",
-			input:            "CREATE TABLE mytable (id UInt32) ENGINE = MergeTree ORDER BY id",
+			input:            "CREATE TABLE IF NOT EXISTS mytable (id UInt32) ENGINE = MergeTree ORDER BY id",
 			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32) ENGINE = ReplicatedMergeTree ORDER BY id",
 			expectedStmtType: "CREATE TABLE",
 		},
 		{
 			name:             "CREATE TABLE - with SummingMergeTree engine",
-			input:            "CREATE TABLE mytable (id UInt32, val UInt64) ENGINE = SummingMergeTree(val) ORDER BY id",
+			input:            "CREATE TABLE IF NOT EXISTS mytable (id UInt32, val UInt64) ENGINE = SummingMergeTree(val) ORDER BY id",
 			expectedOutput:   "CREATE TABLE IF NOT EXISTS mytable ON CLUSTER \"test_cluster\" (id UInt32, val UInt64) ENGINE = ReplicatedSummingMergeTree(val) ORDER BY id",
 			expectedStmtType: "CREATE TABLE",
 		},
@@ -148,12 +148,12 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		{
 			name:             "CREATE MATERIALIZED VIEW - simple",
 			input:            "CREATE MATERIALIZED VIEW myview AS SELECT * FROM mytable",
-			expectedOutput:   "CREATE MATERIALIZED VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
+			expectedOutput:   "CREATE MATERIALIZED VIEW myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
 			expectedStmtType: "CREATE MATERIALIZED VIEW",
 		},
 		{
 			name:             "CREATE MATERIALIZED VIEW - with MergeTree engine",
-			input:            "CREATE MATERIALIZED VIEW myview ENGINE = MergeTree() ORDER BY id AS SELECT id FROM mytable",
+			input:            "CREATE MATERIALIZED VIEW IF NOT EXISTS myview ENGINE = MergeTree() ORDER BY id AS SELECT id FROM mytable",
 			expectedOutput:   "CREATE MATERIALIZED VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" ENGINE = ReplicatedMergeTree() ORDER BY id AS SELECT id FROM mytable",
 			expectedStmtType: "CREATE MATERIALIZED VIEW",
 		},
@@ -161,34 +161,34 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		// CREATE VIEW tests
 		{
 			name:             "CREATE VIEW - simple",
-			input:            "CREATE VIEW myview AS SELECT * FROM mytable",
+			input:            "CREATE VIEW IF NOT EXISTS myview AS SELECT * FROM mytable",
 			expectedOutput:   "CREATE VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
 			expectedStmtType: "CREATE VIEW",
 		},
 		{
 			name:             "CREATE OR REPLACE VIEW - simple",
-			input:            "CREATE OR REPLACE VIEW myview AS SELECT * FROM mytable",
-			expectedOutput:   "CREATE VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
+			input:            "CREATE OR REPLACE VIEW IF NOT EXISTS myview AS SELECT * FROM mytable",
+			expectedOutput:   "CREATE OR REPLACE VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
 			expectedStmtType: "CREATE VIEW",
 		},
 		{
 			name:             "CREATE VIEW IF NOT EXISTS - simple",
-			input:            "CREATE VIEW IF NOT EXISTS myview AS SELECT * FROM mytable",
-			expectedOutput:   "CREATE VIEW IF NOT EXISTS myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
+			input:            "CREATE VIEW myview AS SELECT * FROM mytable",
+			expectedOutput:   "CREATE VIEW myview ON CLUSTER \"test_cluster\" AS SELECT * FROM mytable",
 			expectedStmtType: "CREATE VIEW",
 		},
 
 		// CREATE FUNCTION tests
 		{
 			name:             "CREATE FUNCTION - simple",
-			input:            "CREATE FUNCTION myfunc AS (a, b) -> a + b",
+			input:            "CREATE OR REPLACE FUNCTION myfunc AS (a, b) -> a + b",
 			expectedOutput:   "CREATE OR REPLACE FUNCTION myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
 			expectedStmtType: "CREATE FUNCTION",
 		},
 		{
 			name:             "CREATE FUNCTION - with quotes",
 			input:            "CREATE FUNCTION \"my func\" AS (a, b) -> a + b",
-			expectedOutput:   "CREATE OR REPLACE FUNCTION \"my func\" ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
+			expectedOutput:   "CREATE FUNCTION \"my func\" ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
 			expectedStmtType: "CREATE FUNCTION",
 		},
 		{
@@ -200,7 +200,7 @@ func Test_patchClickhouseQuery(t *testing.T) {
 		{
 			name:             "CREATE FUNCTION IF NOT EXISTS- simple",
 			input:            "CREATE FUNCTION IF NOT EXISTS myfunc AS (a, b) -> a + b",
-			expectedOutput:   "CREATE OR REPLACE FUNCTION myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
+			expectedOutput:   "CREATE FUNCTION IF NOT EXISTS myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
 			expectedStmtType: "CREATE FUNCTION",
 		},
 
@@ -209,6 +209,12 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			name:             "ALTER TABLE - simple",
 			input:            "ALTER TABLE mytable ADD COLUMN newcol UInt32",
 			expectedOutput:   "ALTER TABLE mytable ON CLUSTER \"test_cluster\" ADD COLUMN newcol UInt32",
+			expectedStmtType: "ALTER TABLE",
+		},
+		{
+			name:             "ALTER TABLE IF EXISTS - simple",
+			input:            "ALTER TABLE IF EXISTS mytable ADD COLUMN newcol UInt32",
+			expectedOutput:   "ALTER TABLE IF EXISTS mytable ON CLUSTER \"test_cluster\" ADD COLUMN newcol UInt32",
 			expectedStmtType: "ALTER TABLE",
 		},
 
