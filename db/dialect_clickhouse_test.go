@@ -198,7 +198,7 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			expectedStmtType: "CREATE FUNCTION",
 		},
 		{
-			name:             "CREATE FUNCTION IF NOT EXISTS- simple",
+			name:             "CREATE FUNCTION IF NOT EXISTS - simple",
 			input:            "CREATE FUNCTION IF NOT EXISTS myfunc AS (a, b) -> a + b",
 			expectedOutput:   "CREATE OR REPLACE FUNCTION myfunc ON CLUSTER \"test_cluster\" AS (a, b) -> a + b",
 			expectedStmtType: "CREATE FUNCTION",
