@@ -217,6 +217,12 @@ func Test_patchClickhouseQuery(t *testing.T) {
 			expectedOutput:   "ALTER TABLE IF EXISTS mytable ON CLUSTER \"test_cluster\" ADD COLUMN newcol UInt32",
 			expectedStmtType: "ALTER TABLE",
 		},
+		{
+			name:             "ALTER TABLE - modify setting",
+			input:            "ALTER TABLE mints MODIFY SETTING deduplicate_merge_projection_mode = 'rebuild';",
+			expectedOutput:   "ALTER TABLE mints ON CLUSTER \"test_cluster\" MODIFY SETTING deduplicate_merge_projection_mode = 'rebuild';",
+			expectedStmtType: "ALTER TABLE",
+		},
 
 		// Non-matching statement
 		{
