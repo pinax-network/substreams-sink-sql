@@ -273,13 +273,6 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes))
 
 	go func() {
-		// cleanup defer
-		defer func() {
-			l.cond.L.Lock()
-			l.activeFlushes--
-			l.cond.Broadcast()
-			l.cond.L.Unlock()
-		}()
 
 		// Disallow cancellation of the context to prevent holes in the data with parallel flushes
 		if l.maxParallelFlushes > 1 {
@@ -288,6 +281,13 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 
 		start := time.Now()
 		rowFlushedCount, err := flushLoader.Flush(ctx, outputModuleHash, cursor, lastFinalBlock)
+		took := time.Since(start)
+
+		l.cond.L.Lock()
+		l.activeFlushes--
+		l.cond.Broadcast()
+		l.cond.L.Unlock()
+
 		if err != nil {
 			l.logger.Warn("async flush failed after retries", zap.Error(err))
 			if l.onFlushError != nil {
@@ -296,7 +296,6 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 			return
 		}
 
-		took := time.Since(start)
 		l.logger.Debug("async flush complete",
 			zap.Int("row_count", rowFlushedCount),
 			zap.Duration("took", took))
