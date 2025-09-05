@@ -1,6 +1,7 @@
 package sinker
 
 import (
+	"sync"
 	"time"
 
 	"github.com/streamingfast/bstream"
@@ -13,6 +14,8 @@ import (
 type Stats struct {
 	*shutter.Shutter
 
+	// mutex protects access to metrics that can be modified concurrently
+	mutex              sync.Mutex
 	dbFlushRate        *dmetrics.AvgRatePromCounter
 	dbFlushAvgDuration *dmetrics.AvgDurationCounter
 	flushedRows        *dmetrics.ValueFromMetric
@@ -36,17 +39,23 @@ func NewStats(logger *zap.Logger) *Stats {
 }
 
 func (s *Stats) RecordBlock(block bstream.BlockRef) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.lastBlock = block
 }
 
 func (s *Stats) RecordFlushDuration(duration time.Duration) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	s.dbFlushAvgDuration.AddDuration(duration)
 }
 
 func (s *Stats) Start(each time.Duration, cursor *sink.Cursor) {
+	s.mutex.Lock()
 	if !cursor.IsBlank() {
 		s.lastBlock = cursor.Block()
 	}
+	s.mutex.Unlock()
 
 	if s.IsTerminating() || s.IsTerminated() {
 		panic("already shutdown, refusing to start again")
@@ -68,6 +77,9 @@ func (s *Stats) Start(each time.Duration, cursor *sink.Cursor) {
 }
 
 func (s *Stats) LogNow() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
 	// Logging fields order is important as it affects the final rendering, we carefully ordered
 	// them so the development logs looks nicer.
 	s.logger.Info("postgres sink stats",
