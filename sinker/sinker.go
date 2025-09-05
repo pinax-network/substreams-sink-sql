@@ -54,10 +54,6 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 
 	// Register an error observer so any async flush failure shuts down the sinker
 	loader.SetOnFlushError(func(err error) {
-		// First mark the loader as shutting down to prevent new flushes
-		loader.MarkShuttingDown()
-
-		// Then initiate graceful shutdown
 		s.Shutdown(fmt.Errorf("async flush failed: %w", err))
 	})
 

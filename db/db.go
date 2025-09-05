@@ -243,18 +243,6 @@ func (l *Loader) FlushNeeded() bool {
 	return totalRows > l.batchRowFlushInterval
 }
 
-// MarkShuttingDown sets the shutdown flag to prevent new flushes from starting
-func (l *Loader) MarkShuttingDown() {
-	l.cond.L.Lock()
-	// Only log if we're changing the state
-	if !l.isShuttingDown {
-		l.logger.Info("marking loader as shutting down",
-			zap.Int("active_flushes", l.activeFlushes))
-		l.isShuttingDown = true
-	}
-	l.cond.L.Unlock()
-}
-
 // WaitForAllFlushes blocks until there are no in-flight async flushes.
 func (l *Loader) WaitForAllFlushes() {
 	l.cond.L.Lock()
@@ -317,18 +305,25 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 		rowFlushedCount, err := flushLoader.Flush(ctx, outputModuleHash, cursor, lastFinalBlock)
 		took := time.Since(start)
 
-		l.cond.L.Lock()
-		l.activeFlushes--
-		l.cond.Broadcast()
-		l.cond.L.Unlock()
-
 		if err != nil {
 			l.logger.Warn("async flush failed after retries", zap.Error(err))
+
+			l.cond.L.Lock()
+			l.isShuttingDown = true
+			l.activeFlushes--
+			l.cond.Broadcast()
+			l.cond.L.Unlock()
+
 			if l.onFlushError != nil {
 				l.onFlushError(err)
 			}
 			return
 		}
+
+		l.cond.L.Lock()
+		l.activeFlushes--
+		l.cond.Broadcast()
+		l.cond.L.Unlock()
 
 		l.logger.Debug("async flush complete",
 			zap.Int("row_count", rowFlushedCount),
