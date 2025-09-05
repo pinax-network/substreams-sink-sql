@@ -98,6 +98,7 @@ type Loader struct {
 	cond               *sync.Cond
 	activeFlushes      int
 	maxParallelFlushes int
+	isShuttingDown     bool
 
 	// onFlush is an optional observer called when a flush completes successfully.
 	// It receives the number of rows flushed and the total duration of the flush.
@@ -242,13 +243,38 @@ func (l *Loader) FlushNeeded() bool {
 	return totalRows > l.batchRowFlushInterval
 }
 
+// MarkShuttingDown sets the shutdown flag to prevent new flushes from starting
+func (l *Loader) MarkShuttingDown() {
+	l.cond.L.Lock()
+	// Only log if we're changing the state
+	if !l.isShuttingDown {
+		l.logger.Info("marking loader as shutting down",
+			zap.Int("active_flushes", l.activeFlushes))
+		l.isShuttingDown = true
+	}
+	l.cond.L.Unlock()
+}
+
 // WaitForAllFlushes blocks until there are no in-flight async flushes.
 func (l *Loader) WaitForAllFlushes() {
 	l.cond.L.Lock()
 	defer l.cond.L.Unlock()
 
-	for l.activeFlushes > 0 {
-		l.cond.Wait()
+	// Set the shutdown flag to prevent new flushes while we're waiting
+	if !l.isShuttingDown {
+		l.logger.Info("marking loader as shutting down during wait for flushes")
+		l.isShuttingDown = true
+	}
+
+	if l.activeFlushes > 0 {
+		start := time.Now()
+		for l.activeFlushes > 0 {
+			l.logger.Info("waiting for in-flight async flushes to complete",
+				zap.Int("active_flushes", l.activeFlushes),
+				zap.Duration("waited_for", time.Since(start)))
+			l.cond.Wait()
+		}
+		l.logger.Info("all async flushes completed")
 	}
 }
 
@@ -256,10 +282,20 @@ func (l *Loader) WaitForAllFlushes() {
 func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor *sink.Cursor, lastFinalBlock uint64) {
 	l.logger.Debug("async flush: starting flush", zap.Int("active_flushes", l.activeFlushes), zap.Uint64("last_final_block", lastFinalBlock))
 	l.cond.L.Lock()
+	defer l.cond.L.Unlock()
+
 	for l.activeFlushes >= l.maxParallelFlushes {
 		l.logger.Debug("async flush: maximum number of parallel flushes reached, waiting for a flush to complete")
 		l.cond.Wait()
 	}
+
+	if l.isShuttingDown {
+		l.logger.Info("async flush: loader is shutting down after wait, skipping new flush",
+			zap.Uint64("block", lastFinalBlock),
+			zap.Int("active_flushes", l.activeFlushes))
+		return
+	}
+
 	// Snapshot entries and replace with a fresh buffer
 	snapshot := l.entries
 	l.entries = NewOrderedMap[string, *OrderedMap[string, *Operation]]()
@@ -267,8 +303,6 @@ func (l *Loader) FlushAsync(ctx context.Context, outputModuleHash string, cursor
 
 	// Build a lightweight loader for flushing while still under lock to avoid racy reads of fields.
 	flushLoader := l.newFlushLoader(snapshot)
-
-	l.cond.L.Unlock()
 
 	l.logger.Debug("async flush started", zap.Int("active_flushes", l.activeFlushes))
 

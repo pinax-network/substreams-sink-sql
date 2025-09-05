@@ -54,6 +54,10 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 
 	// Register an error observer so any async flush failure shuts down the sinker
 	loader.SetOnFlushError(func(err error) {
+		// First mark the loader as shutting down to prevent new flushes
+		loader.MarkShuttingDown()
+
+		// Then initiate graceful shutdown
 		s.Shutdown(fmt.Errorf("async flush failed: %w", err))
 	})
 
@@ -241,9 +245,15 @@ func (s *SQLSinker) HandleBlockRangeCompletion(ctx context.Context, cursor *sink
 		s.logger.Warn("completion flush skipped: context canceled, exiting without final flush", zap.Error(err))
 		return nil
 	}
+
 	s.logger.Info("stream completed, flushing remaining entries to database", zap.Stringer("block", cursor.Block()))
 	_, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, cursor.Block().Num())
 	if err != nil {
+		// Check if this is a shutdown-related error and handle accordingly
+		if strings.Contains(err.Error(), "shutting down") {
+			s.logger.Info("final flush skipped because loader is shutting down", zap.Stringer("block", cursor.Block()))
+			return nil
+		}
 		return fmt.Errorf("failed to flush %s block on completion: %w", cursor.Block(), err)
 	}
 
