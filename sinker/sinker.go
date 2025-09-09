@@ -32,7 +32,7 @@ type SQLSinker struct {
 }
 
 func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer) (*SQLSinker, error) {
-	s := &SQLSinker{
+	return &SQLSinker{
 		Shutter: shutter.New(),
 		Sinker:  sink,
 
@@ -42,22 +42,7 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 
 		stats:               NewStats(logger),
 		lastAppliedBlockNum: nil,
-	}
-
-	// Register a flush observer to update metrics and stats for both sync and async flushes
-	loader.SetOnFlush(func(rows int, dur time.Duration) {
-		FlushCount.AddInt(1)
-		FlushedRowsCount.AddInt(rows)
-		FlushDuration.AddInt64(dur.Nanoseconds())
-		s.stats.RecordFlushDuration(dur)
-	})
-
-	// Register an error observer so any async flush failure shuts down the sinker
-	loader.SetOnFlushError(func(err error) {
-		s.Shutdown(fmt.Errorf("async flush failed: %w", err))
-	})
-
-	return s, nil
+	}, nil
 }
 
 func (s *SQLSinker) Run(ctx context.Context) {
@@ -84,13 +69,12 @@ func (s *SQLSinker) Run(ctx context.Context) {
 
 	s.Sinker.OnTerminating(s.Shutdown)
 	s.OnTerminating(func(err error) {
-		s.logger.Info("sql sinker terminating", zap.Stringer("last_block_written", s.stats.lastBlock))
-		s.loader.WaitForAllFlushes()
 		s.stats.LogNow()
-		s.stats.Close()
+		s.logger.Info("sql sinker terminating", zap.Stringer("last_block_written", s.stats.lastBlock))
 		s.Sinker.Shutdown(err)
 	})
 
+	s.OnTerminating(func(_ error) { s.stats.Close() })
 	s.stats.OnTerminated(func(err error) { s.Shutdown(err) })
 
 	logEach := 15 * time.Second
@@ -127,26 +111,14 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		// We do not use UnmarshalTo here because we need to parse an older proto type and
 		// UnmarshalTo enforces the type check. So we check manually the `TypeUrl` above and we use
 		// `Unmarshal` instead which only deals with the bytes value.
-
-		// Measure protobuf decoding performance
-		ProtobufMessageSize.AddInt(len(mapOutput.Value))
-		decodeStart := time.Now()
 		if err := proto.Unmarshal(mapOutput.Value, dbChanges); err != nil {
 			return fmt.Errorf("unmarshal database changes: %w", err)
 		}
-		ProtobufDecodeDuration.AddInt64(time.Since(decodeStart).Nanoseconds())
 
-		// Measure database changes application performance
-		applyStart := time.Now()
 		if err := s.applyDatabaseChanges(dbChanges, data.Clock.Number, data.FinalBlockHeight); err != nil {
 			return fmt.Errorf("apply database changes: %w", err)
 		}
-		DatabaseChangesDuration.AddInt64(time.Since(applyStart).Nanoseconds())
-		DatabaseChangesCount.AddInt(len(dbChanges.TableChanges))
 	}
-	// Update stats with the current block for logging
-	s.stats.RecordBlock(cursor.Block())
-
 	if s.lastAppliedBlockNum == nil {
 		s.lastAppliedBlockNum = &data.Clock.Number
 	}
@@ -154,7 +126,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && data.Clock.Number-*s.lastAppliedBlockNum >= s.batchBlockModulo(isLive)
 	rowFlushNeeded := s.loader.FlushNeeded()
 	if blockFlushNeeded || rowFlushNeeded {
-		s.logger.Debug("triggering async flush",
+		s.logger.Debug("flushing to database",
 			zap.Stringer("block", cursor.Block()),
 			zap.Uint64("last_flushed_block", *s.lastAppliedBlockNum),
 			zap.Bool("is_live", *isLive),
@@ -162,12 +134,31 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 			zap.Bool("row_flush_interval_reached", rowFlushNeeded),
 		)
 
-		s.loader.FlushAsync(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
+		flushStart := time.Now()
+		rowFlushedCount, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, data.FinalBlockHeight)
+		if err != nil {
+			return fmt.Errorf("failed to flush at block %s: %w", cursor.Block(), err)
+		}
 
-		s.lastAppliedBlockNum = &data.Clock.Number
-		ActiveFlushes.SetUint64(uint64(s.loader.GetActiveFlushesNum()))
+		flushDuration := time.Since(flushStart)
+		if flushDuration > 5*time.Second {
+			level := zap.InfoLevel
+			if flushDuration > 30*time.Second {
+				level = zap.WarnLevel
+			}
+
+			s.logger.Check(level, "flush to database took a long time to complete, could cause long sync time along the road").Write(zap.Duration("took", flushDuration))
+		}
+
+		FlushCount.Inc()
+		FlushedRowsCount.AddInt(rowFlushedCount)
+		FlushDuration.AddInt64(flushDuration.Nanoseconds())
 		HeadBlockTimeDrift.SetBlockTime(data.Clock.GetTimestamp().AsTime())
 		HeadBlockNumber.SetUint64(data.Clock.GetNumber())
+
+		s.stats.RecordBlock(cursor.Block())
+		s.stats.RecordFlushDuration(flushDuration)
+		s.lastAppliedBlockNum = &data.Clock.Number
 	}
 
 	return nil
@@ -233,15 +224,7 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 
 func (s *SQLSinker) HandleBlockRangeCompletion(ctx context.Context, cursor *sink.Cursor) error {
 
-	s.logger.Info("stream completed, waiting for async flushes to finish", zap.Stringer("block", cursor.Block()))
-	s.loader.WaitForAllFlushes()
-
-	// If the upstream context has been canceled, skip the final flush
-	if err := ctx.Err(); err != nil {
-		s.logger.Warn("completion flush skipped: context canceled, exiting without final flush", zap.Error(err))
-		return nil
-	}
-	s.logger.Info("stream completed, flushing remaining entries to database", zap.Stringer("block", cursor.Block()))
+	s.logger.Info("stream completed, flushing to database", zap.Stringer("block", cursor.Block()))
 	_, err := s.loader.Flush(ctx, s.OutputModuleHash(), cursor, cursor.Block().Num())
 	if err != nil {
 		return fmt.Errorf("failed to flush %s block on completion: %w", cursor.Block(), err)

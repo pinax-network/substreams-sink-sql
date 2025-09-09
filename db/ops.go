@@ -13,9 +13,6 @@ import (
 func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
 	uniqueID := createRowUniqueID(primaryKey)
 
-	l.cond.L.Lock()
-	defer l.cond.L.Unlock()
-
 	if l.tracer.Enabled() {
 		l.logger.Debug("processing insert operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
 	}
@@ -81,6 +78,23 @@ func createRowUniqueID(m map[string]string) string {
 	return strings.Join(values, "/")
 }
 
+func (l *Loader) GetPrimaryKey(tableName string, pk string) (map[string]string, error) {
+	primaryKeyColumns := l.tables[tableName].primaryColumns
+
+	switch len(primaryKeyColumns) {
+	case 0:
+		return nil, fmt.Errorf("substreams sent a single primary key, but our sql table has none. This is unsupported.")
+	case 1:
+		return map[string]string{primaryKeyColumns[0].name: pk}, nil
+	}
+
+	cols := make([]string, len(primaryKeyColumns))
+	for i := range primaryKeyColumns {
+		cols[i] = primaryKeyColumns[i].name
+	}
+	return nil, fmt.Errorf("substreams sent a single primary key, but our sql table has a composite primary key (columns: %s). This is unsupported.", strings.Join(cols, ","))
+}
+
 // Update a row in the DB, it is assumed the table exists, you can do a
 // check before with HasTable()
 func (l *Loader) Update(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
@@ -93,12 +107,13 @@ func (l *Loader) Update(tableName string, primaryKey map[string]string, data map
 		l.logger.Debug("processing update operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
 	}
 
-	l.cond.L.Lock()
-	defer l.cond.L.Unlock()
-
 	table, found := l.tables[tableName]
 	if !found {
 		return fmt.Errorf("unknown table %q", tableName)
+	}
+
+	if len(table.primaryColumns) == 0 {
+		return fmt.Errorf("trying to perform an UPDATE operation but table %q don't have a primary key(s) set, this is not accepted", tableName)
 	}
 
 	entry, found := l.entries.Get(tableName)
@@ -146,9 +161,6 @@ func (l *Loader) Delete(tableName string, primaryKey map[string]string, reversib
 	if l.tracer.Enabled() {
 		l.logger.Debug("processing delete operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID))
 	}
-
-	l.cond.L.Lock()
-	defer l.cond.L.Unlock()
 
 	table, found := l.tables[tableName]
 	if !found {
