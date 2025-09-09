@@ -453,10 +453,6 @@ func (l *Loader) HasTable(tableName string) bool {
 	return false
 }
 
-// GetActiveFlushesNum returns the current number of in-flight async flushes.
-// This value is approximate and may be racy; it is intended for metrics only.
-func (l *Loader) GetActiveFlushesNum() int { return l.activeFlushes }
-
 func (l *Loader) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
 	encoder.AddUint64("entries_count", l.entriesCount)
 	return nil

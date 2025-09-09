@@ -22,5 +22,3 @@ var DatabaseChangesCount = metrics.NewCounter("substreams_sink_postgres_db_chang
 
 var HeadBlockNumber = metrics.NewHeadBlockNumber("substreams_sink_postgres")
 var HeadBlockTimeDrift = metrics.NewHeadTimeDrift("substreams_sink_postgres")
-
-var ActiveFlushes = metrics.NewGauge("substreams_sink_postgres_active_flushes", "Current number of active async flushes")
