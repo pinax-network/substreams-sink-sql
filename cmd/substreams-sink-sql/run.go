@@ -32,7 +32,6 @@ var sinkRunCmd = Command(sinkRunE,
 		flags.Int("batch-row-flush-interval", 100_000, "When in catch up mode, flush every N rows or after batch-block-flush-interval, whichever comes first. Set to 0 to disable and only use batch-block-flush-interval. Ineffective if the sink is now in the live portion of the chain where only 'live-block-flush-interval' applies.")
 		flags.Int("live-block-flush-interval", 1, "When processing in live mode, flush every N blocks.")
 		flags.Int("flush-interval", 0, "(deprecated) please use --batch-block-flush-interval instead")
-		flags.Int("max-parallel-flushes", 1, "Maximum number of parallel async flushes. Minimum is 1.")
 		flags.String("idle-timeout", "", "Duration to wait without data messages before triggering a reconnect, e.g. '10m', '1h'. Waiting for first block doesn't count as idle.")
 		flags.StringP("endpoint", "e", "", "Specify the substreams endpoint, ex: `mainnet.eth.streamingfast.io:443`")
 	}),
@@ -106,15 +105,7 @@ func sinkRunE(cmd *cobra.Command, args []string) error {
 		batchBlockFlushInterval = sflags.MustGetInt(cmd, "flush-interval")
 	}
 
-	dbLoader, err := newDBLoader(
-		cmd,
-		dsn,
-		batchBlockFlushInterval,
-		sflags.MustGetInt(cmd, "batch-row-flush-interval"),
-		sflags.MustGetInt(cmd, "live-block-flush-interval"),
-		sflags.MustGetInt(cmd, "max-parallel-flushes"),
-		handleReorgs,
-	)
+	dbLoader, err := newDBLoader(cmd, dsn, batchBlockFlushInterval, sflags.MustGetInt(cmd, "batch-row-flush-interval"), sflags.MustGetInt(cmd, "live-block-flush-interval"), handleReorgs)
 	if err != nil {
 		return fmt.Errorf("new db loader: %w", err)
 	}

@@ -220,8 +220,6 @@ func TestInserts(t *testing.T) {
 
 			for _, evt := range test.events {
 				if evt.undoSignal {
-					// Ensure previously triggered async flushes are completed before revert
-					l.WaitForAllFlushes()
 					cursor := simpleCursor(evt.blockNum, evt.libNum)
 					err := sinker.HandleBlockUndoSignal(ctx, &pbsubstreamsrpc.BlockUndoSignal{
 						LastValidBlock:  &pbsubstreams.BlockRef{Id: fmt.Sprintf("%d", evt.blockNum), Number: evt.blockNum},
@@ -238,9 +236,6 @@ func TestInserts(t *testing.T) {
 				)
 				require.NoError(t, err)
 			}
-
-			// Ensure any asynchronous flushes have completed before asserting results
-			l.WaitForAllFlushes()
 
 			results := tx.Results()
 			assert.Equal(t, test.expectSQL, results)
