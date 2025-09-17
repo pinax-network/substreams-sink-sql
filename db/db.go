@@ -35,6 +35,7 @@ type Loader struct {
 
 	database     string
 	schema       string
+	host         string
 	entries      *OrderedMap[string, *OrderedMap[string, *Operation]]
 	entriesCount uint64
 	tables       map[string]*TableInfo
@@ -78,6 +79,7 @@ func NewLoader(
 		DB:                       db,
 		database:                 dsn.database,
 		schema:                   dsn.schema,
+		host:                     dsn.host,
 		entries:                  NewOrderedMap[string, *OrderedMap[string, *Operation]](),
 		tables:                   map[string]*TableInfo{},
 		batchBlockFlushInterval:  batchBlockFlushInterval,
@@ -295,6 +297,10 @@ func (l *Loader) GetDatabase() string {
 
 func (l *Loader) GetSchema() string {
 	return l.schema
+}
+
+func (l *Loader) GetDatabaseHost() string {
+	return l.host
 }
 
 func (l *Loader) HasTable(tableName string) bool {
