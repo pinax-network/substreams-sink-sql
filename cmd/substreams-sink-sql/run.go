@@ -110,7 +110,7 @@ func sinkRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("new db loader: %w", err)
 	}
 
-	postgresSinker, err := sinker.New(sink, dbLoader, zlog, tracer)
+	postgresSinker, err := sinker.New(sink, dbLoader, zlog, tracer, manifestPath)
 	if err != nil {
 		return fmt.Errorf("unable to setup postgres sinker: %w", err)
 	}

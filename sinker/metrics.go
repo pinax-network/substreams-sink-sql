@@ -16,3 +16,16 @@ var FlushDuration = metrics.NewCounter("substreams_sink_postgres_store_flush_dur
 
 var HeadBlockNumber = metrics.NewHeadBlockNumber("substreams_sink_postgres")
 var HeadBlockTimeDrift = metrics.NewHeadTimeDrift("substreams_sink_postgres")
+
+var SinkInfo = metrics.NewGaugeVec("substreams_sink_sql_info", []string{
+	"endpoint",           // Substreams endpoint
+	"database",           // Database name
+	"schema",             // Schema name
+	"db_host",            // Database host
+	"manifest",           // Manifest path or URL
+	"output_module",      // Output module name
+	"module_hash",        // Output module hash
+	"block_start",        // Start block
+	"block_end",          // End block
+	"block_restarted_at", // Restarted at block
+}, "Information about the SQL sink configuration")

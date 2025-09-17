@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,9 +30,10 @@ type SQLSinker struct {
 
 	stats               *Stats
 	lastAppliedBlockNum *uint64
+	manifestPath        string // Store manifest path for metrics
 }
 
-func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer) (*SQLSinker, error) {
+func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer, manifestPath string) (*SQLSinker, error) {
 	return &SQLSinker{
 		Shutter: shutter.New(),
 		Sinker:  sink,
@@ -42,6 +44,7 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 
 		stats:               NewStats(logger),
 		lastAppliedBlockNum: nil,
+		manifestPath:        manifestPath,
 	}, nil
 }
 
@@ -90,6 +93,24 @@ func (s *SQLSinker) Run(ctx context.Context) {
 		zap.String("database", s.loader.GetDatabase()),
 		zap.String("schema", s.loader.GetSchema()),
 	)
+
+	endpoint, _, _ := s.EndpointConfig()
+	endBlockStr := "open"
+	if endBlock := s.BlockRange().EndBlock(); endBlock != nil {
+		endBlockStr = strconv.FormatUint(*endBlock, 10)
+	}
+
+	SinkInfo.SetInt64(1,
+		endpoint,
+		s.loader.GetDatabase(),
+		s.loader.GetSchema(),
+		s.loader.GetDatabaseHost(),
+		s.manifestPath,
+		s.OutputModuleName(),
+		s.OutputModuleHash(),
+		strconv.FormatUint(s.BlockRange().StartBlock(), 10),
+		endBlockStr,
+		strconv.FormatUint(cursor.Block().Num(), 10))
 	s.Sinker.Run(ctx, cursor, s)
 }
 
