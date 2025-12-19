@@ -103,9 +103,11 @@ func NewLoader(
 		l.handleReorgs = *handleReorgs
 	}
 
-	if l.handleReorgs && l.getDialect().OnlyInserts() {
-		return nil, fmt.Errorf("driver %s does not support reorg handling. You must use set a non-zero undo-buffer-size", dsn.driver)
-	}
+	// ClickHouse currently does not support reorg handling properly
+	// This is a temporary workaround to allow ClickHouse to quietly accept reorgs without deleting anything from the database
+	// if l.handleReorgs && l.getDialect().OnlyInserts() {
+	// 	return nil, fmt.Errorf("driver %s does not support reorg handling. You must use set a non-zero undo-buffer-size", dsn.driver)
+	// }
 
 	logger.Info("created new DB loader",
 		zap.Int("batch_block_flush_interval", batchBlockFlushInterval),
@@ -217,7 +219,11 @@ func (l *Loader) LoadTables() error {
 		return &SystemTableError{fmt.Errorf(`%s.%s table is not found`, EscapeIdentifier(l.schema), CURSORS_TABLE)}
 	}
 	if l.handleReorgs && !seenHistoryTable {
-		return &SystemTableError{fmt.Errorf("%s.%s table is not found and reorgs handling is enabled", EscapeIdentifier(l.schema), HISTORY_TABLE)}
+		l.logger.Warn("history table not found but reorg handling is enabled",
+			zap.String("schema_name", l.schema),
+			zap.String("table_name", HISTORY_TABLE),
+		)
+		// return &SystemTableError{fmt.Errorf("%s.%s table is not found and reorgs handling is enabled", EscapeIdentifier(l.schema), HISTORY_TABLE)}
 	}
 
 	l.cursorTable = l.tables[CURSORS_TABLE]

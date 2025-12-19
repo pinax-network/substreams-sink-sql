@@ -100,7 +100,10 @@ func (d clickhouseDialect) Flush(tx Tx, ctx context.Context, l *Loader, outputMo
 }
 
 func (d clickhouseDialect) Revert(tx Tx, ctx context.Context, l *Loader, lastValidFinalBlock uint64) error {
-	return fmt.Errorf("clickhouse driver does not support reorg management.")
+	l.logger.Warn("received UNDO signal but ClickHouse driver does not support reorg handling - data already flushed to database cannot be reverted, ignoring UNDO",
+		zap.Uint64("last_valid_block", lastValidFinalBlock),
+	)
+	return nil
 }
 
 func (d clickhouseDialect) GetCreateCursorQuery(schema string, withPostgraphile bool) string {
