@@ -155,12 +155,16 @@ func (l *Loader) LiveBlockFlushInterval() int {
 }
 
 func (l *Loader) FlushNeeded() bool {
+	totalRows := l.GetBufferedRowCount()
+	return totalRows > l.batchRowFlushInterval
+}
+
+func (l *Loader) GetBufferedRowCount() int {
 	totalRows := 0
-	// todo keep a running count when inserting/deleting rows directly
 	for pair := l.entries.Oldest(); pair != nil; pair = pair.Next() {
 		totalRows += pair.Value.Len()
 	}
-	return totalRows > l.batchRowFlushInterval
+	return totalRows
 }
 
 func (l *Loader) LoadTables() error {

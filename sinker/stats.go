@@ -19,6 +19,9 @@ type Stats struct {
 	dbFlushedRowsRate  *dmetrics.AvgRatePromCounter
 	lastBlock          bstream.BlockRef
 	logger             *zap.Logger
+
+	bufferedRows  int
+	lastFlushTime time.Time
 }
 
 func NewStats(logger *zap.Logger) *Stats {
@@ -31,7 +34,8 @@ func NewStats(logger *zap.Logger) *Stats {
 		dbFlushedRowsRate:  dmetrics.MustNewAvgRateFromPromCounter(FlushedRowsCount, 1*time.Second, 30*time.Second, "flushed rows"),
 		logger:             logger,
 
-		lastBlock: unsetBlockRef{},
+		lastBlock:     unsetBlockRef{},
+		lastFlushTime: time.Now(),
 	}
 }
 
@@ -39,8 +43,14 @@ func (s *Stats) RecordBlock(block bstream.BlockRef) {
 	s.lastBlock = block
 }
 
-func (s *Stats) RecordFlushDuration(duration time.Duration) {
+func (s *Stats) RecordFlush(duration time.Duration) {
+	s.lastFlushTime = time.Now()
+	s.bufferedRows = 0
 	s.dbFlushAvgDuration.AddDuration(duration)
+}
+
+func (s *Stats) UpdateBufferedRows(count int) {
+	s.bufferedRows = count
 }
 
 func (s *Stats) Start(each time.Duration, cursor *sink.Cursor) {
@@ -75,6 +85,8 @@ func (s *Stats) LogNow() {
 		zap.Stringer("db_flush_duration_rate", s.dbFlushAvgDuration),
 		zap.Uint64("flushed_rows", s.flushedRows.ValueUint()),
 		zap.Stringer("db_flushed_rows_rate", s.dbFlushedRowsRate),
+		zap.Int("buffered_rows", s.bufferedRows),
+		zap.Duration("time_since_last_flush", time.Since(s.lastFlushTime)),
 		zap.Stringer("last_block", s.lastBlock),
 	)
 }

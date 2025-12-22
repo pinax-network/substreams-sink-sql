@@ -156,6 +156,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 
 	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && data.Clock.Number-*s.lastAppliedBlockNum >= s.batchBlockModulo(isLive)
 	rowFlushNeeded := s.loader.FlushNeeded()
+	s.stats.UpdateBufferedRows(s.loader.GetBufferedRowCount())
 	if blockFlushNeeded || rowFlushNeeded {
 		s.logger.Debug("flushing to database",
 			zap.Stringer("block", cursor.Block()),
@@ -188,7 +189,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		HeadBlockNumber.SetUint64(data.Clock.GetNumber())
 
 		s.stats.RecordBlock(cursor.Block())
-		s.stats.RecordFlushDuration(flushDuration)
+		s.stats.RecordFlush(flushDuration)
 		s.lastAppliedBlockNum = &data.Clock.Number
 	}
 
