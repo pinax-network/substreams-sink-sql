@@ -33,6 +33,7 @@ var sinkRunCmd = Command(sinkRunE,
 		flags.Int("live-block-flush-interval", 1, "When processing in live mode, flush every N blocks.")
 		flags.Int("flush-interval", 0, "(deprecated) please use --batch-block-flush-interval instead")
 		flags.String("idle-timeout", "", "Duration to wait without data messages before triggering a reconnect, e.g. '10m', '1h'. Waiting for first block doesn't count as idle.")
+		flags.String("live-drift-reconnect", "1h", "When in live mode, force reconnect if block timestamp drift exceeds this duration, triggering backfilling. Set to 0 to disable.")
 		flags.StringP("endpoint", "e", "", "Specify the substreams endpoint, ex: `mainnet.eth.streamingfast.io:443`")
 	}),
 	Example("substreams-sink-sql run 'postgres://localhost:5432/posgres?sslmode=disable' uniswap-v3@v0.2.10"),
@@ -85,6 +86,16 @@ func sinkRunE(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	liveDriftReconnect := sflags.MustGetString(cmd, "live-drift-reconnect")
+	var liveDriftReconnectDuration time.Duration
+	if liveDriftReconnect != "" {
+		var err error
+		liveDriftReconnectDuration, err = time.ParseDuration(liveDriftReconnect)
+		if err != nil {
+			return fmt.Errorf("invalid live-drift-reconnect duration: %w", err)
+		}
+	}
+
 	sink, err := sink.NewFromViper(
 		cmd,
 		supportedOutputTypes,
@@ -110,7 +121,7 @@ func sinkRunE(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("new db loader: %w", err)
 	}
 
-	postgresSinker, err := sinker.New(sink, dbLoader, zlog, tracer, manifestPath)
+	postgresSinker, err := sinker.New(sink, dbLoader, zlog, tracer, manifestPath, liveDriftReconnectDuration)
 	if err != nil {
 		return fmt.Errorf("unable to setup postgres sinker: %w", err)
 	}

@@ -28,12 +28,13 @@ type SQLSinker struct {
 	logger *zap.Logger
 	tracer logging.Tracer
 
-	stats               *Stats
-	lastAppliedBlockNum *uint64
-	manifestPath        string // Store manifest path for metrics
+	stats                      *Stats
+	lastAppliedBlockNum        *uint64
+	manifestPath               string
+	liveDriftReconnectDuration time.Duration
 }
 
-func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer, manifestPath string) (*SQLSinker, error) {
+func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer logging.Tracer, manifestPath string, liveDriftReconnectDuration time.Duration) (*SQLSinker, error) {
 	return &SQLSinker{
 		Shutter: shutter.New(),
 		Sinker:  sink,
@@ -42,9 +43,10 @@ func New(sink *sink.Sinker, loader *db.Loader, logger *zap.Logger, tracer loggin
 		logger: logger,
 		tracer: tracer,
 
-		stats:               NewStats(logger),
-		lastAppliedBlockNum: nil,
-		manifestPath:        manifestPath,
+		stats:                      NewStats(logger),
+		lastAppliedBlockNum:        nil,
+		manifestPath:               manifestPath,
+		liveDriftReconnectDuration: liveDriftReconnectDuration,
 	}, nil
 }
 
@@ -119,6 +121,14 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 
 	if output.Name != s.OutputModuleName() {
 		return fmt.Errorf("received data from wrong output module, expected to received from %q but got module's output for %q", s.OutputModuleName(), output.Name)
+	}
+
+	if s.liveDriftReconnectDuration > 0 && isLive != nil && *isLive {
+		blockTime := data.Clock.GetTimestamp().AsTime()
+		drift := time.Since(blockTime)
+		if drift > s.liveDriftReconnectDuration {
+			return fmt.Errorf("live mode drift exceeded threshold: block timestamp is %s behind current time (threshold: %s), triggering reconnect for backfilling", drift, s.liveDriftReconnectDuration)
+		}
 	}
 
 	dbChanges := &pbdatabase.DatabaseChanges{}

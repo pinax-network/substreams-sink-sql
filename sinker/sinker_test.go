@@ -216,7 +216,7 @@ func TestInserts(t *testing.T) {
 			)
 			s, err := sink.New(sink.SubstreamsModeDevelopment, false, testPackage, testPackage.Modules.Modules[0], []byte("unused"), testClientConfig, logger, nil)
 			require.NoError(t, err)
-			sinker, _ := New(s, l, logger, nil, "")
+			sinker, _ := New(s, l, logger, nil, "", 0)
 
 			for _, evt := range test.events {
 				if evt.undoSignal {
