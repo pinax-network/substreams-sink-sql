@@ -18,6 +18,7 @@ type Stats struct {
 	flushedRows        *dmetrics.ValueFromMetric
 	dbFlushedRowsRate  *dmetrics.AvgRatePromCounter
 	lastBlock          bstream.BlockRef
+	lastBlockTime      time.Time
 	logger             *zap.Logger
 
 	bufferedRows  int
@@ -41,6 +42,10 @@ func NewStats(logger *zap.Logger) *Stats {
 
 func (s *Stats) RecordBlock(block bstream.BlockRef) {
 	s.lastBlock = block
+}
+
+func (s *Stats) RecordBlockTime(t time.Time) {
+	s.lastBlockTime = t
 }
 
 func (s *Stats) RecordFlush(duration time.Duration) {
@@ -80,7 +85,7 @@ func (s *Stats) Start(each time.Duration, cursor *sink.Cursor) {
 func (s *Stats) LogNow() {
 	// Logging fields order is important as it affects the final rendering, we carefully ordered
 	// them so the development logs looks nicer.
-	s.logger.Info("postgres sink stats",
+	fields := []zap.Field{
 		zap.Stringer("db_flush_rate", s.dbFlushRate),
 		zap.Stringer("db_flush_duration_rate", s.dbFlushAvgDuration),
 		zap.Uint64("flushed_rows", s.flushedRows.ValueUint()),
@@ -88,7 +93,11 @@ func (s *Stats) LogNow() {
 		zap.Int("buffered_rows", s.bufferedRows),
 		zap.Duration("time_since_last_flush", time.Since(s.lastFlushTime)),
 		zap.Stringer("last_block", s.lastBlock),
-	)
+	}
+	if !s.lastBlockTime.IsZero() {
+		fields = append(fields, zap.Duration("drift", time.Since(s.lastBlockTime)))
+	}
+	s.logger.Info("postgres sink stats", fields...)
 }
 
 func (s *Stats) Close() {

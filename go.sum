@@ -489,8 +489,8 @@ github.com/pierrec/lz4/v4 v4.1.22 h1:cKFw6uJDK+/gfw5BcDL0JL5aBsAFdsIT18eRtLj7VIU
 github.com/pierrec/lz4/v4 v4.1.22/go.mod h1:gZWDp/Ze/IJXGXf23ltt2EXimqmTUXEy0GFuRQyBid4=
 github.com/pinax-network/graph-networks-libs/packages/golang v0.7.0 h1:chRRgzgzmFzICbB/8ybY1IDqvxVgjV415M0AsIYmUHQ=
 github.com/pinax-network/graph-networks-libs/packages/golang v0.7.0/go.mod h1:G76L6ql7YCygVzN45BmtSBqA+qwcDuFWMM42tDnGJbE=
-github.com/pinax-network/substreams-sink-go v0.5.8 h1:tOCbm3X/3GUNLAG/NU34WaHxS85Pmd+HlFjrFTF8QWg=
-github.com/pinax-network/substreams-sink-go v0.5.8/go.mod h1:Pb3i0VSRpzs6RzPNN+0mzQPGH62mrst7MQqDn3tA3xo=
+github.com/pinax-network/substreams-sink-go v0.5.9 h1:qN5QJabhrREziir9yaLJi4UW69JZ3LTzNLi/uYHdXLo=
+github.com/pinax-network/substreams-sink-go v0.5.9/go.mod h1:Pb3i0VSRpzs6RzPNN+0mzQPGH62mrst7MQqDn3tA3xo=
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c/go.mod h1:7rwL4CYBLnjLxUqIJNnCWiEdr3bn6IUYi15bNlnbCCU=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=

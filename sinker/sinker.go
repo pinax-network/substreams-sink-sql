@@ -189,6 +189,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		HeadBlockNumber.SetUint64(data.Clock.GetNumber())
 
 		s.stats.RecordBlock(cursor.Block())
+		s.stats.RecordBlockTime(data.Clock.GetTimestamp().AsTime())
 		s.stats.RecordFlush(flushDuration)
 		s.lastAppliedBlockNum = &data.Clock.Number
 	}

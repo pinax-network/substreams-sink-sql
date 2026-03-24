@@ -86,7 +86,7 @@ func (d clickhouseDialect) Flush(tx Tx, ctx context.Context, l *Loader, outputMo
 			}
 
 			if _, err := batch.ExecContext(ctx, values...); err != nil {
-				return entryCount, fmt.Errorf("executing for entry %q: %w", values, err)
+				return entryCount, fmt.Errorf("executing for table %q entry %q: %w", tableName, values, err)
 			}
 		}
 
