@@ -150,6 +150,8 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 			return fmt.Errorf("apply database changes: %w", err)
 		}
 	}
+	s.stats.RecordBlockTime(data.Clock.GetTimestamp().AsTime())
+
 	if s.lastAppliedBlockNum == nil {
 		s.lastAppliedBlockNum = &data.Clock.Number
 	}
@@ -189,7 +191,6 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		HeadBlockNumber.SetUint64(data.Clock.GetNumber())
 
 		s.stats.RecordBlock(cursor.Block())
-		s.stats.RecordBlockTime(data.Clock.GetTimestamp().AsTime())
 		s.stats.RecordFlush(flushDuration)
 		s.lastAppliedBlockNum = &data.Clock.Number
 	}
