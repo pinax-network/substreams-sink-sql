@@ -68,7 +68,7 @@ func (l *Loader) Upsert(tableName string, primaryKey map[string]string, data map
 	}
 
 	if len(table.primaryColumns) == 0 {
-		return fmt.Errorf("trying to perform an UPSERT operation but table %q don't have a primary key(s) set, this is not accepted", tableName)
+		return fmt.Errorf("trying to perform an UPSERT operation but table %q doesn't have a primary key(s) set, this is not accepted", tableName)
 	}
 
 	entry, found := l.entries.Get(tableName)
