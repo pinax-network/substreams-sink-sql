@@ -165,6 +165,22 @@ func TestInserts(t *testing.T) {
 				`COMMIT`,
 			},
 		},
+		{
+			name: "upsert final block",
+			events: []event{
+				{
+					blockNum:     10,
+					libNum:       10,
+					tableChanges: []*pbdatabase.TableChange{upsertRowSinglePK("xfer", "1234", "from", "sender1", "to", "receiver1")},
+				},
+			},
+			expectSQL: []string{
+				`INSERT INTO "testschema"."xfer" ("from","id","to") VALUES ('sender1','1234','receiver1') ON CONFLICT ("id") DO UPDATE SET "from"=EXCLUDED."from", "to"=EXCLUDED."to";`,
+				`DELETE FROM "testschema"."substreams_history" WHERE block_num <= 10;`,
+				`UPDATE "testschema"."cursors" set cursor = 'bN7dsAhRyo44yl_ykkjA36WwLpc_DFtvXwrlIBBBj4r2', block_num = 10, block_id = '10' WHERE id = '756e75736564';`,
+				`COMMIT`,
+			},
+		},
 
 		{
 			name: "insert two reversible blocks, then UNDO last",
@@ -294,6 +310,17 @@ func insertRowSinglePK(table string, pk string, fieldsAndValues ...string) *pbda
 			Pk: pk,
 		},
 		Operation: pbdatabase.TableChange_CREATE,
+		Fields:    getFields(fieldsAndValues...),
+	}
+}
+
+func upsertRowSinglePK(table string, pk string, fieldsAndValues ...string) *pbdatabase.TableChange {
+	return &pbdatabase.TableChange{
+		Table: table,
+		PrimaryKey: &pbdatabase.TableChange_Pk{
+			Pk: pk,
+		},
+		Operation: tableChangeOperationUpsert,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }

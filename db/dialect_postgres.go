@@ -310,9 +310,20 @@ func (d postgresDialect) saveRow(op, schema, escapedTableName string, primaryKey
 
 }
 
+func (d postgresDialect) saveUpsert(schema, escapedTableName string, primaryKey map[string]string, blockNum uint64) string {
+	schemaAndTable := fmt.Sprintf("%s.%s", EscapeIdentifier(schema), escapedTableName)
+	return fmt.Sprintf(`WITH previous AS (SELECT row_to_json(%s) AS prev_value FROM %s.%s WHERE %s), history AS (INSERT INTO %s (op,table_name,pk,prev_value,block_num) SELECT CASE WHEN previous.prev_value IS NULL THEN 'I' ELSE 'U' END,%s,%s,previous.prev_value,%d FROM (SELECT 1) AS one LEFT JOIN previous ON TRUE) `,
+		escapedTableName,
+		EscapeIdentifier(schema), escapedTableName,
+		getPrimaryKeyWhereClause(primaryKey),
+		d.historyTable(schema),
+		escapeStringValue(schemaAndTable), escapeStringValue(primaryKeyToJSON(primaryKey)), blockNum,
+	)
+}
+
 func (d *postgresDialect) prepareStatement(schema string, o *Operation) (string, error) {
 	var columns, values []string
-	if o.opType == OperationTypeInsert || o.opType == OperationTypeUpdate {
+	if o.opType == OperationTypeInsert || o.opType == OperationTypeUpsert || o.opType == OperationTypeUpdate {
 		var err error
 		columns, values, err = d.prepareColValues(o.table, o.data)
 		if err != nil {
@@ -320,7 +331,7 @@ func (d *postgresDialect) prepareStatement(schema string, o *Operation) (string,
 		}
 	}
 
-	if o.opType == OperationTypeUpdate || o.opType == OperationTypeDelete {
+	if o.opType == OperationTypeUpsert || o.opType == OperationTypeUpdate || o.opType == OperationTypeDelete {
 		// A table without a primary key set yield a `primaryKey` map with a single entry where the key is an empty string
 		if _, found := o.primaryKey[""]; found {
 			return "", fmt.Errorf("trying to perform %s operation but table %q don't have a primary key set, this is not accepted", o.opType, o.table.name)
@@ -338,6 +349,43 @@ func (d *postgresDialect) prepareStatement(schema string, o *Operation) (string,
 			return d.saveInsert(schema, o.table.identifier, o.primaryKey, *o.reversibleBlockNum) + insertQuery, nil
 		}
 		return insertQuery, nil
+
+	case OperationTypeUpsert:
+		primaryColumns := make([]string, len(o.table.primaryColumns))
+		for i, primaryColumn := range o.table.primaryColumns {
+			primaryColumns[i] = primaryColumn.escapedName
+		}
+
+		updates := make([]string, 0, len(columns))
+		for _, column := range columns {
+			isPrimaryKey := false
+			for _, primaryColumn := range primaryColumns {
+				if column == primaryColumn {
+					isPrimaryKey = true
+					break
+				}
+			}
+			if !isPrimaryKey {
+				updates = append(updates, fmt.Sprintf("%s=EXCLUDED.%s", column, column))
+			}
+		}
+
+		action := "DO NOTHING"
+		if len(updates) > 0 {
+			action = "DO UPDATE SET " + strings.Join(updates, ", ")
+		}
+
+		upsertQuery := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s;",
+			o.table.identifier,
+			strings.Join(columns, ","),
+			strings.Join(values, ","),
+			strings.Join(primaryColumns, ","),
+			action,
+		)
+		if o.reversibleBlockNum != nil {
+			return d.saveUpsert(schema, o.table.nameEscaped, o.primaryKey, *o.reversibleBlockNum) + upsertQuery, nil
+		}
+		return upsertQuery, nil
 
 	case OperationTypeUpdate:
 		updates := make([]string, len(columns))

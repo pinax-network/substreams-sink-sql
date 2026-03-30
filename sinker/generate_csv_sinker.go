@@ -247,6 +247,8 @@ func (s *GenerateCSVSinker) dumpDatabaseChangesIntoCSV(dbChanges *pbdatabase.Dat
 
 		switch change.Operation {
 		case pbdatabase.TableChange_CREATE:
+			fallthrough
+		case tableChangeOperationUpsert:
 			// Add fields
 			for _, field := range change.Fields {
 				fields[field.Name] = field.NewValue

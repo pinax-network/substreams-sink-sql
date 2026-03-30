@@ -19,6 +19,7 @@ import (
 )
 
 const BLOCK_FLUSH_INTERVAL_DISABLED = 0
+const tableChangeOperationUpsert = pbdatabase.TableChange_Operation(4)
 
 type SQLSinker struct {
 	*shutter.Shutter
@@ -237,6 +238,11 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 			err := s.loader.Insert(change.Table, primaryKeys, changes, reversibleBlockNum)
 			if err != nil {
 				return fmt.Errorf("database insert: %w", err)
+			}
+		case tableChangeOperationUpsert:
+			err := s.loader.Upsert(change.Table, primaryKeys, changes, reversibleBlockNum)
+			if err != nil {
+				return fmt.Errorf("database upsert: %w", err)
 			}
 		case pbdatabase.TableChange_UPDATE:
 			err := s.loader.Update(change.Table, primaryKeys, changes, reversibleBlockNum)

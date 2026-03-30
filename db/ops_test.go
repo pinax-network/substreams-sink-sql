@@ -63,3 +63,21 @@ func TestGetPrimaryKey(t *testing.T) {
 	}
 
 }
+
+func TestUpsertUsesInsertForInsertOnlyDialects(t *testing.T) {
+	l, err := NewLoader("clickhouse://user:pass@localhost:9000/testschema", 0, 0, 0, OnModuleHashMismatchIgnore, nil, zlog, tracer)
+	require.NoError(t, err)
+
+	l.tables = TestTables("testschema")
+
+	err = l.Upsert("xfer", map[string]string{"id": "1234"}, map[string]string{"from": "sender1", "to": "receiver1"}, nil)
+	require.NoError(t, err)
+
+	entry, found := l.entries.Get("xfer")
+	require.True(t, found)
+
+	op, found := entry.Get("1234")
+	require.True(t, found)
+	assert.Equal(t, OperationTypeInsert, op.opType)
+	assert.Equal(t, map[string]string{"from": "sender1", "id": "1234", "to": "receiver1"}, op.data)
+}
