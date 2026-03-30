@@ -165,6 +165,22 @@ func TestInserts(t *testing.T) {
 				`COMMIT`,
 			},
 		},
+		{
+			name: "upsert final block",
+			events: []event{
+				{
+					blockNum:     10,
+					libNum:       10,
+					tableChanges: []*pbdatabase.TableChange{upsertRowSinglePK("xfer", "1234", "from", "sender1", "to", "receiver1")},
+				},
+			},
+			expectSQL: []string{
+				`INSERT INTO "testschema"."xfer" ("from","id","to") VALUES ('sender1','1234','receiver1') ON CONFLICT ("id") DO UPDATE SET "from"=EXCLUDED."from", "to"=EXCLUDED."to";`,
+				`DELETE FROM "testschema"."substreams_history" WHERE block_num <= 10;`,
+				`UPDATE "testschema"."cursors" set cursor = 'bN7dsAhRyo44yl_ykkjA36WwLpc_DFtvXwrlIBBBj4r2', block_num = 10, block_id = '10' WHERE id = '756e75736564';`,
+				`COMMIT`,
+			},
+		},
 
 		{
 			name: "insert two reversible blocks, then UNDO last",
@@ -280,8 +296,8 @@ func getFields(fieldsAndValues ...string) (out []*pbdatabase.Field) {
 	}
 	for i := 0; i < len(fieldsAndValues); i += 2 {
 		out = append(out, &pbdatabase.Field{
-			Name:     fieldsAndValues[i],
-			NewValue: fieldsAndValues[i+1],
+			Name:  fieldsAndValues[i],
+			Value: fieldsAndValues[i+1],
 		})
 	}
 	return
@@ -293,7 +309,18 @@ func insertRowSinglePK(table string, pk string, fieldsAndValues ...string) *pbda
 		PrimaryKey: &pbdatabase.TableChange_Pk{
 			Pk: pk,
 		},
-		Operation: pbdatabase.TableChange_CREATE,
+		Operation: pbdatabase.TableChange_OPERATION_CREATE,
+		Fields:    getFields(fieldsAndValues...),
+	}
+}
+
+func upsertRowSinglePK(table string, pk string, fieldsAndValues ...string) *pbdatabase.TableChange {
+	return &pbdatabase.TableChange{
+		Table: table,
+		PrimaryKey: &pbdatabase.TableChange_Pk{
+			Pk: pk,
+		},
+		Operation: pbdatabase.TableChange_OPERATION_UPSERT,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }
@@ -306,7 +333,7 @@ func insertRowMultiplePK(table string, pk map[string]string, fieldsAndValues ...
 				Keys: pk,
 			},
 		},
-		Operation: pbdatabase.TableChange_CREATE,
+		Operation: pbdatabase.TableChange_OPERATION_CREATE,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }
@@ -319,7 +346,7 @@ func updateRowMultiplePK(table string, pk map[string]string, fieldsAndValues ...
 				Keys: pk,
 			},
 		},
-		Operation: pbdatabase.TableChange_UPDATE,
+		Operation: pbdatabase.TableChange_OPERATION_UPDATE,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }
@@ -331,7 +358,7 @@ func deleteRowMultiplePK(table string, pk map[string]string) *pbdatabase.TableCh
 				Keys: pk,
 			},
 		},
-		Operation: pbdatabase.TableChange_DELETE,
+		Operation: pbdatabase.TableChange_OPERATION_DELETE,
 	}
 }
 

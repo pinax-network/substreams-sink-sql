@@ -52,6 +52,70 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 	return nil
 }
 
+func (l *Loader) Upsert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
+	if l.getDialect().OnlyInserts() {
+		return l.Insert(tableName, primaryKey, data, reversibleBlockNum)
+	}
+
+	uniqueID := createRowUniqueID(primaryKey)
+	if l.tracer.Enabled() {
+		l.logger.Debug("processing upsert operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
+	}
+
+	table, found := l.tables[tableName]
+	if !found {
+		return fmt.Errorf("unknown table %q", tableName)
+	}
+
+	if len(table.primaryColumns) == 0 {
+		return fmt.Errorf("trying to perform an UPSERT operation but table %q doesn't have a primary key(s) set, this is not accepted", tableName)
+	}
+
+	entry, found := l.entries.Get(tableName)
+	if !found {
+		if l.tracer.Enabled() {
+			l.logger.Debug("adding tracking of table never seen before", zap.String("table_name", tableName))
+		}
+
+		entry = NewOrderedMap[string, *Operation]()
+		l.entries.Set(tableName, entry)
+	}
+
+	for _, primary := range l.tables[tableName].primaryColumns {
+		if dataFromPrimaryKey, ok := primaryKey[primary.name]; ok {
+			data[primary.name] = dataFromPrimaryKey
+		}
+	}
+
+	if op, found := entry.Get(uniqueID); found {
+		if l.tracer.Enabled() {
+			l.logger.Debug("primary key entry already exist for table, merging fields together", zap.String("primary_key", uniqueID), zap.String("table_name", tableName))
+		}
+
+		if op.opType == OperationTypeDelete {
+			entry.Set(uniqueID, l.newUpsertOperation(table, primaryKey, data, reversibleBlockNum))
+			return nil
+		}
+
+		if err := op.mergeData(data); err != nil {
+			return err
+		}
+		if op.opType != OperationTypeInsert {
+			op.opType = OperationTypeUpsert
+		}
+		entry.Set(uniqueID, op)
+		return nil
+	}
+
+	if l.tracer.Enabled() {
+		l.logger.Debug("primary key entry never existed for table, adding upsert operation", zap.String("primary_key", uniqueID), zap.String("table_name", tableName))
+	}
+
+	entry.Set(uniqueID, l.newUpsertOperation(table, primaryKey, data, reversibleBlockNum))
+	l.entriesCount++
+	return nil
+}
+
 func createRowUniqueID(m map[string]string) string {
 	if len(m) == 1 {
 		for _, v := range m {

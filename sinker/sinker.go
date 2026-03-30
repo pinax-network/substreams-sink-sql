@@ -224,7 +224,7 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 
 		changes := map[string]string{}
 		for _, field := range change.Fields {
-			changes[field.Name] = field.NewValue
+			changes[field.Name] = field.Value
 		}
 
 		var reversibleBlockNum *uint64
@@ -233,17 +233,22 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 		}
 
 		switch change.Operation {
-		case pbdatabase.TableChange_CREATE:
+		case pbdatabase.TableChange_OPERATION_CREATE:
 			err := s.loader.Insert(change.Table, primaryKeys, changes, reversibleBlockNum)
 			if err != nil {
 				return fmt.Errorf("database insert: %w", err)
 			}
-		case pbdatabase.TableChange_UPDATE:
+		case pbdatabase.TableChange_OPERATION_UPSERT:
+			err := s.loader.Upsert(change.Table, primaryKeys, changes, reversibleBlockNum)
+			if err != nil {
+				return fmt.Errorf("database upsert: %w", err)
+			}
+		case pbdatabase.TableChange_OPERATION_UPDATE:
 			err := s.loader.Update(change.Table, primaryKeys, changes, reversibleBlockNum)
 			if err != nil {
 				return fmt.Errorf("database update: %w", err)
 			}
-		case pbdatabase.TableChange_DELETE:
+		case pbdatabase.TableChange_OPERATION_DELETE:
 			err := s.loader.Delete(change.Table, primaryKeys, reversibleBlockNum)
 			if err != nil {
 				return fmt.Errorf("database delete: %w", err)

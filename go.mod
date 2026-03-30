@@ -15,7 +15,7 @@ require (
 	github.com/streamingfast/logging v0.0.0-20260108192805-38f96de0a641
 	github.com/streamingfast/substreams v1.18.2
 	github.com/streamingfast/substreams-sink v0.5.0
-	github.com/streamingfast/substreams-sink-database-changes v1.1.3
+	github.com/streamingfast/substreams-sink-database-changes v1.3.2-0.20260127204147-b47b01ce26e1
 	github.com/stretchr/testify v1.11.1
 	github.com/wk8/go-ordered-map/v2 v2.1.7
 	go.uber.org/zap v1.27.1
