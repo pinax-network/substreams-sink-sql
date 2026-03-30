@@ -296,8 +296,8 @@ func getFields(fieldsAndValues ...string) (out []*pbdatabase.Field) {
 	}
 	for i := 0; i < len(fieldsAndValues); i += 2 {
 		out = append(out, &pbdatabase.Field{
-			Name:     fieldsAndValues[i],
-			NewValue: fieldsAndValues[i+1],
+			Name:  fieldsAndValues[i],
+			Value: fieldsAndValues[i+1],
 		})
 	}
 	return
@@ -309,7 +309,7 @@ func insertRowSinglePK(table string, pk string, fieldsAndValues ...string) *pbda
 		PrimaryKey: &pbdatabase.TableChange_Pk{
 			Pk: pk,
 		},
-		Operation: pbdatabase.TableChange_CREATE,
+		Operation: pbdatabase.TableChange_OPERATION_CREATE,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }
@@ -333,7 +333,7 @@ func insertRowMultiplePK(table string, pk map[string]string, fieldsAndValues ...
 				Keys: pk,
 			},
 		},
-		Operation: pbdatabase.TableChange_CREATE,
+		Operation: pbdatabase.TableChange_OPERATION_CREATE,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }
@@ -346,7 +346,7 @@ func updateRowMultiplePK(table string, pk map[string]string, fieldsAndValues ...
 				Keys: pk,
 			},
 		},
-		Operation: pbdatabase.TableChange_UPDATE,
+		Operation: pbdatabase.TableChange_OPERATION_UPDATE,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }
@@ -358,7 +358,7 @@ func deleteRowMultiplePK(table string, pk map[string]string) *pbdatabase.TableCh
 				Keys: pk,
 			},
 		},
-		Operation: pbdatabase.TableChange_DELETE,
+		Operation: pbdatabase.TableChange_OPERATION_DELETE,
 	}
 }
 
