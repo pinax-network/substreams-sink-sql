@@ -320,7 +320,7 @@ func upsertRowSinglePK(table string, pk string, fieldsAndValues ...string) *pbda
 		PrimaryKey: &pbdatabase.TableChange_Pk{
 			Pk: pk,
 		},
-		Operation: tableChangeOperationUpsert,
+		Operation: pbdatabase.TableChange_OPERATION_UPSERT,
 		Fields:    getFields(fieldsAndValues...),
 	}
 }
