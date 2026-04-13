@@ -21,7 +21,6 @@ const clickhouseInsertableColumnsQuery = `
 	WHERE
 		database = $1
 		AND table = $2
-		AND is_subcolumn = 0
 	ORDER BY
 		position
 `
@@ -43,6 +42,9 @@ func (l *Loader) loadClickhouseTables() error {
 		)
 
 		if schemaName != l.schema {
+			continue
+		}
+		if shouldSkipClickhouseTable(tableName) {
 			continue
 		}
 
@@ -135,6 +137,10 @@ func shouldSkipClickhouseColumn(defaultKind string) bool {
 	default:
 		return false
 	}
+}
+
+func shouldSkipClickhouseTable(tableName string) bool {
+	return strings.HasPrefix(tableName, ".")
 }
 
 func (l *Loader) validateCursorTableInfo(columns map[string]*ColumnInfo) error {

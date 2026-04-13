@@ -51,3 +51,10 @@ func TestShouldSkipClickhouseColumn(t *testing.T) {
 	assert.True(t, shouldSkipClickhouseColumn("materialized"))
 	assert.True(t, shouldSkipClickhouseColumn("ALIAS"))
 }
+
+func TestShouldSkipClickhouseTable(t *testing.T) {
+	assert.True(t, shouldSkipClickhouseTable(".inner_id.0e667ee5-8e5b-4943-98cc-36325c087ea5"))
+	assert.True(t, shouldSkipClickhouseTable(".inner.my_mv"))
+	assert.False(t, shouldSkipClickhouseTable("erc20_balances"))
+	assert.False(t, shouldSkipClickhouseTable(CURSORS_TABLE))
+}
