@@ -168,6 +168,10 @@ func (l *Loader) GetBufferedRowCount() int {
 }
 
 func (l *Loader) LoadTables() error {
+	if _, ok := l.getDialect().(clickhouseDialect); ok {
+		return l.loadClickhouseTables()
+	}
+
 	schemaTables, err := schema.Tables(l.DB)
 	if err != nil {
 		return fmt.Errorf("retrieving table and schema: %w", err)
