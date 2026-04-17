@@ -102,6 +102,12 @@ func (s *SQLSinker) Run(ctx context.Context) {
 		endBlockStr = strconv.FormatUint(*endBlock, 10)
 	}
 
+	substreamsRunCmd := fmt.Sprintf("substreams run %s %s -e %s -s %d --limit-processed-blocks 0 --production-mode --noop-mode",
+		s.manifestPath,
+		s.OutputModuleName(),
+		endpoint,
+		cursor.Block().Num())
+
 	SinkInfo.SetInt64(1,
 		endpoint,
 		s.loader.GetDatabase(),
@@ -112,7 +118,8 @@ func (s *SQLSinker) Run(ctx context.Context) {
 		s.OutputModuleHash(),
 		strconv.FormatUint(s.BlockRange().StartBlock(), 10),
 		endBlockStr,
-		strconv.FormatUint(cursor.Block().Num(), 10))
+		strconv.FormatUint(cursor.Block().Num(), 10),
+		substreamsRunCmd)
 	s.Sinker.Run(ctx, cursor, s)
 }
 

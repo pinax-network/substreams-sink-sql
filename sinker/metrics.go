@@ -28,4 +28,5 @@ var SinkInfo = metrics.NewGaugeVec("substreams_sink_sql_info", []string{
 	"block_start",        // Start block
 	"block_end",          // End block
 	"block_restarted_at", // Restarted at block
+	"substreams_run",     // Substreams run command: substreams run <manifest> <output_module> -e <endpoint> -s <block_restarted_at> --limit-processed-blocks 0 --production-mode --noop-mode
 }, "Information about the SQL sink configuration")
