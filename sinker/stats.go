@@ -19,6 +19,7 @@ type Stats struct {
 	dbFlushedRowsRate  *dmetrics.AvgRatePromCounter
 	lastBlock          bstream.BlockRef
 	lastBlockTime      time.Time
+	runningFromTier1   bool
 	logger             *zap.Logger
 
 	bufferedRows  int
@@ -42,6 +43,10 @@ func NewStats(logger *zap.Logger) *Stats {
 
 func (s *Stats) RecordBlock(block bstream.BlockRef) {
 	s.lastBlock = block
+}
+
+func (s *Stats) RecordRunningFromTier1(v bool) {
+	s.runningFromTier1 = v
 }
 
 func (s *Stats) RecordBlockTime(t time.Time) {
@@ -93,6 +98,7 @@ func (s *Stats) LogNow() {
 		zap.Int("buffered_rows", s.bufferedRows),
 		zap.Duration("time_since_last_flush", time.Since(s.lastFlushTime)),
 		zap.Stringer("last_block", s.lastBlock),
+		zap.Bool("running_from_tier1", s.runningFromTier1),
 	}
 	if !s.lastBlockTime.IsZero() {
 		fields = append(fields, zap.Duration("drift", time.Since(s.lastBlockTime)))
