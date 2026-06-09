@@ -449,6 +449,19 @@ func convertToType(value string, valueType reflect.Type) (any, error) {
 			return nil, fmt.Errorf("invalid pointer type: %w", err)
 		}
 
+		// When the pointed-to type is time.Time (i.e. the column is Nullable(DateTime) /
+		// Nullable(Date)), the recursive convertToType returns an int64 (seconds since
+		// epoch) — that's the shape the non-nullable DateTime path relies on for
+		// clickhouse-go to coerce. But for the Ptr/Nullable case we go through reflect.Set
+		// below, which requires the source kind to match the target kind. int64 → time.Time
+		// is not assignable and panics. Convert here so the reflect.Set succeeds and the
+		// driver receives a *time.Time pointer for the Nullable column.
+		if elemType == reflectTypeTime {
+			if seconds, ok := val.(int64); ok {
+				val = time.Unix(seconds, 0).UTC()
+			}
+		}
+
 		// We cannot just return &val here as this will return an *interface{} that the Clickhouse Go client won't be
 		// able to convert on inserting. Instead, we create a new variable using the type that valueType has been
 		// pointing to, assign the converted value from convertToType to that and then return a pointer to the new variable.

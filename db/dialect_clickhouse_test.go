@@ -349,6 +349,18 @@ func Test_convertToType(t *testing.T) {
 			expect:    nil,
 			expectErr: errors.New(`"Time" is not supported as Clickhouse Array type`),
 			valueType: reflect.TypeOf([]time.Time{}),
+		}, {
+			name:      "Nullable DateTime from integer seconds",
+			value:     "1609459200",
+			expect:    func() any { t := time.Unix(1609459200, 0).UTC(); return &t }(),
+			expectErr: nil,
+			valueType: reflect.TypeOf((*time.Time)(nil)),
+		}, {
+			name:      "Nullable DateTime from ISO 8601",
+			value:     "2021-01-01T00:00:00Z",
+			expect:    func() any { t := time.Unix(1609459200, 0).UTC(); return &t }(),
+			expectErr: nil,
+			valueType: reflect.TypeOf((*time.Time)(nil)),
 		},
 	}
 	for _, test := range tests {
