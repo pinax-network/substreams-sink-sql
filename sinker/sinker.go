@@ -130,7 +130,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		return fmt.Errorf("received data from wrong output module, expected to received from %q but got module's output for %q", s.OutputModuleName(), output.Name)
 	}
 
-	if s.liveDriftReconnectDuration > 0 && isLive != nil && *isLive {
+	if s.liveDriftReconnectDuration > 0 && s.runningFromTier1(data.Clock.Number) {
 		blockTime := data.Clock.GetTimestamp().AsTime()
 		drift := time.Since(blockTime)
 		if drift > s.liveDriftReconnectDuration {
@@ -280,6 +280,28 @@ func (s *SQLSinker) HandleBlockRangeCompletion(ctx context.Context, cursor *sink
 
 func (s *SQLSinker) HandleBlockUndoSignal(ctx context.Context, data *pbsubstreamsrpc.BlockUndoSignal, cursor *sink.Cursor) error {
 	return s.loader.Revert(ctx, s.OutputModuleHash(), cursor, data.LastValidBlock.Number)
+}
+
+// runningFromTier1 reports whether the given block is being produced by live (tier1)
+// linear streaming rather than replayed from parallel (tier2) backprocessing. This is the
+// same notion the sink library logs as `live` in its stream stats; we derive it from the
+// block at which the remote endpoint hands off from parallel backprocessing to linear
+// streaming (Response_Session.LinearHandoffBlock): any block at or beyond that height is
+// live tier1 output.
+//
+// This is the condition under which we want --live-drift-reconnect to fire: when we are
+// streaming live but have fallen behind, forcing a reconnect makes the endpoint spin up
+// fresh tier2 parallel backprocessing to close the gap quickly. We deliberately do NOT
+// use the `isLive` flag from the sink's DeltaLivenessChecker, which only latches once a
+// block lands within --live-block-time-delta of wall-clock and so never arms while the
+// stream is perpetually lagging — exactly the case we need to recover from.
+//
+// During a reconnect's catch-up the handoff block sits near the (new) head, so the
+// replayed backprocessed blocks fall below it and we will not reconnect-loop. The
+// handoff > 0 guard skips the brief window before the session has been initialized.
+func (s *SQLSinker) runningFromTier1(blockNum uint64) bool {
+	handoff := s.LinearHandoffBlock()
+	return handoff > 0 && blockNum >= handoff
 }
 
 func (s *SQLSinker) batchBlockModulo(isLive *bool) uint64 {

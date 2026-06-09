@@ -33,7 +33,7 @@ var sinkRunCmd = Command(sinkRunE,
 		flags.Int("live-block-flush-interval", 1, "When processing in live mode, flush every N blocks.")
 		flags.Int("flush-interval", 0, "(deprecated) please use --batch-block-flush-interval instead")
 		flags.String("idle-timeout", "", "Duration to wait without data messages before triggering a reconnect, e.g. '10m', '1h'. Waiting for first block doesn't count as idle.")
-		flags.String("live-drift-reconnect", "1h", "When in live mode, force reconnect if block timestamp drift exceeds this duration, triggering backfilling. Set to 0 to disable.")
+		flags.String("live-drift-reconnect", "", "When set, force a reconnect (triggering tier2 parallel backfilling) if, while streaming live (tier1), the block timestamp drift exceeds this duration, e.g. '15m', '1h'. Disabled by default.")
 		flags.StringP("endpoint", "e", "", "Specify the substreams endpoint, ex: `mainnet.eth.streamingfast.io:443`")
 	}),
 	Example("substreams-sink-sql run 'postgres://localhost:5432/posgres?sslmode=disable' uniswap-v3@v0.2.10"),
