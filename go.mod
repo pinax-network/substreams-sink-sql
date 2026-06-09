@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.25.0
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/bobg/go-generics/v2 v2.2.2
 	github.com/drone/envsubst v1.0.3
 	github.com/golang/protobuf v1.5.4
@@ -38,7 +39,6 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.3 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
 	github.com/ClickHouse/ch-go v0.65.1 // indirect
-	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.30.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.54.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.54.0 // indirect
@@ -202,4 +202,4 @@ replace github.com/jimsmart/schema => github.com/streamingfast/schema v0.0.0-202
 
 replace github.com/ClickHouse/clickhouse-go/v2 => github.com/YaroShkvorets/clickhouse-go/v2 v2.26.0-sink-sql
 
-replace github.com/streamingfast/substreams-sink => github.com/pinax-network/substreams-sink-go v0.5.10
+replace github.com/streamingfast/substreams-sink => github.com/pinax-network/substreams-sink-go v0.5.11
