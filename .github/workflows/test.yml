@@ -5,7 +5,10 @@ on:
     tags:
       - "v*"
     branches:
-      - "*"
+      - "**"
+  pull_request:
+    branches:
+      - "main"
   workflow_dispatch:
 
 jobs:
