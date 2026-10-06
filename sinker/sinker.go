@@ -30,6 +30,7 @@ type SQLSinker struct {
 
 	stats                      *Stats
 	lastAppliedBlockNum        *uint64
+	flushedSinceStart          bool
 	manifestPath               string
 	liveDriftReconnectDuration time.Duration
 }
@@ -161,7 +162,16 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		s.lastAppliedBlockNum = &data.Clock.Number
 	}
 
-	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && data.Clock.Number-*s.lastAppliedBlockNum >= s.batchBlockModulo(isLive)
+	blocksSinceLastFlush := data.Clock.Number - *s.lastAppliedBlockNum
+	if !s.flushedSinceStart {
+		// Until the first flush, lastAppliedBlockNum is the first block received, not a flushed
+		// one. Count that block too, as if the block before it had been flushed: otherwise, even
+		// at a flush interval of 1, the first block after every start is held back and only
+		// flushed together with the second one.
+		blocksSinceLastFlush++
+	}
+
+	blockFlushNeeded := s.batchBlockModulo(isLive) > 0 && blocksSinceLastFlush >= s.batchBlockModulo(isLive)
 	rowFlushNeeded := s.loader.FlushNeeded()
 	s.stats.UpdateBufferedRows(s.loader.GetBufferedRowCount())
 	if blockFlushNeeded || rowFlushNeeded {
@@ -200,6 +210,7 @@ func (s *SQLSinker) HandleBlockScopedData(ctx context.Context, data *pbsubstream
 		s.stats.RecordRunningFromTier1(s.runningFromTier1(data.Clock.Number))
 		s.stats.RecordFlush(flushDuration)
 		s.lastAppliedBlockNum = &data.Clock.Number
+		s.flushedSinceStart = true
 	}
 
 	return nil
@@ -242,12 +253,12 @@ func (s *SQLSinker) applyDatabaseChanges(dbChanges *pbdatabase.DatabaseChanges, 
 
 		switch change.Operation {
 		case pbdatabase.TableChange_OPERATION_CREATE:
-			err := s.loader.Insert(change.Table, primaryKeys, changes, reversibleBlockNum)
+			err := s.loader.Insert(change.Table, primaryKeys, changes, blockNum, reversibleBlockNum)
 			if err != nil {
 				return fmt.Errorf("database insert: %w", err)
 			}
 		case pbdatabase.TableChange_OPERATION_UPSERT:
-			err := s.loader.Upsert(change.Table, primaryKeys, changes, reversibleBlockNum)
+			err := s.loader.Upsert(change.Table, primaryKeys, changes, blockNum, reversibleBlockNum)
 			if err != nil {
 				return fmt.Errorf("database upsert: %w", err)
 			}

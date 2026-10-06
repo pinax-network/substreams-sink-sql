@@ -261,6 +261,102 @@ func TestInserts(t *testing.T) {
 
 }
 
+func TestFlushIntervalOfOneFlushesEveryBlockFromTheFirst(t *testing.T) {
+	tests := []struct {
+		name                    string
+		firstBlock              uint64
+		isLive                  bool
+		batchBlockFlushInterval int
+		liveBlockFlushInterval  int
+	}{
+		{name: "catch up", firstBlock: 10, isLive: false, batchBlockFlushInterval: 1, liveBlockFlushInterval: 1000},
+		{name: "live", firstBlock: 10, isLive: true, batchBlockFlushInterval: 1000, liveBlockFlushInterval: 1},
+		{name: "catch up from block 0", firstBlock: 0, isLive: false, batchBlockFlushInterval: 1, liveBlockFlushInterval: 1000},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			// No block reaches the row interval, so only the block interval triggers flushes.
+			l, tx := db.NewTestLoaderWithFlushIntervals(logger, tracer, "testschema", db.TestTables("testschema"), test.batchBlockFlushInterval, 1000, test.liveBlockFlushInterval)
+			s, err := sink.New(sink.SubstreamsModeDevelopment, false, testPackage, testPackage.Modules.Modules[0], []byte("unused"), testClientConfig, logger, nil)
+			require.NoError(t, err)
+			sinker, _ := New(s, l, logger, nil, "", 0)
+
+			// The same key is written in the first two blocks after the start. Each block must be
+			// flushed on its own as soon as it is handled.
+			var expectSQL []string
+			for _, blockNum := range []uint64{test.firstBlock, test.firstBlock + 1} {
+				sender := fmt.Sprintf("sender%d", blockNum)
+				err := sinker.HandleBlockScopedData(
+					ctx,
+					blockScopedData("db_out", []*pbdatabase.TableChange{upsertRowSinglePK("xfer", "1234", "from", sender)}, blockNum, blockNum),
+					&test.isLive, sink.MustNewCursor(simpleCursor(blockNum, blockNum)),
+				)
+				require.NoError(t, err)
+
+				expectSQL = append(expectSQL,
+					fmt.Sprintf(`INSERT INTO "testschema"."xfer" ("from","id") VALUES ('%s','1234') ON CONFLICT ("id") DO UPDATE SET "from"=EXCLUDED."from";`, sender),
+					fmt.Sprintf(`DELETE FROM "testschema"."substreams_history" WHERE block_num <= %d;`, blockNum),
+					updateCursorSQL(blockNum, blockNum),
+					`COMMIT`,
+				)
+				assert.Equal(t, expectSQL, tx.Results(), "after block %d", blockNum)
+			}
+		})
+	}
+}
+
+func TestPostgresFlushOfSeveralBlocksKeepsOneOperationPerKey(t *testing.T) {
+	ctx := context.Background()
+	// Block flushes are disabled and no block reaches the row interval, so blocks 10 to 12 all
+	// wait for the flush at the end of the stream.
+	l, tx := db.NewTestLoaderWithFlushIntervals(logger, tracer, "testschema", db.TestTables("testschema"), 0, 1000, 0)
+	s, err := sink.New(sink.SubstreamsModeDevelopment, false, testPackage, testPackage.Modules.Modules[0], []byte("unused"), testClientConfig, logger, nil)
+	require.NoError(t, err)
+	sinker, _ := New(s, l, logger, nil, "", 0)
+
+	isLive := false
+	for _, block := range []struct {
+		num     uint64
+		changes []*pbdatabase.TableChange
+	}{
+		{10, []*pbdatabase.TableChange{
+			insertRowSinglePK("xfer", "1234", "from", "sender1", "to", "receiver1"),
+			upsertRowSinglePK("xfer", "2345", "from", "sender1", "to", "receiver1"),
+			insertRowSinglePK("xfer", "3456", "from", "sender1", "to", "receiver1"),
+		}},
+		{11, []*pbdatabase.TableChange{
+			updateRowMultiplePK("xfer", map[string]string{"id": "1234"}, "to", "receiver2"),
+			upsertRowSinglePK("xfer", "2345", "to", "receiver2"),
+		}},
+		{12, []*pbdatabase.TableChange{
+			deleteRowMultiplePK("xfer", map[string]string{"id": "3456"}),
+		}},
+	} {
+		err := sinker.HandleBlockScopedData(ctx, blockScopedData("db_out", block.changes, block.num, block.num), &isLive, sink.MustNewCursor(simpleCursor(block.num, block.num)))
+		require.NoError(t, err)
+	}
+	require.Empty(t, tx.Results())
+
+	require.NoError(t, sinker.HandleBlockRangeCompletion(ctx, sink.MustNewCursor(simpleCursor(12, 12))))
+
+	// Postgres keeps one operation per primary key for the whole flush: the changes of later
+	// blocks merge into it, or a delete replaces it.
+	assert.Equal(t, []string{
+		`INSERT INTO "testschema"."xfer" ("from","id","to") VALUES ('sender1','1234','receiver2');`,
+		`INSERT INTO "testschema"."xfer" ("from","id","to") VALUES ('sender1','2345','receiver2') ON CONFLICT ("id") DO UPDATE SET "from"=EXCLUDED."from", "to"=EXCLUDED."to";`,
+		`DELETE FROM "testschema"."xfer" WHERE "id" = '3456'`,
+		`DELETE FROM "testschema"."substreams_history" WHERE block_num <= 12;`,
+		updateCursorSQL(12, 12),
+		`COMMIT`,
+	}, tx.Results())
+}
+
+func updateCursorSQL(blockNum, finalBlockNum uint64) string {
+	return fmt.Sprintf(`UPDATE "testschema"."cursors" set cursor = '%s', block_num = %d, block_id = '%d' WHERE id = '756e75736564';`, simpleCursor(blockNum, finalBlockNum), blockNum, blockNum)
+}
+
 var T = true
 var flushEveryBlock = &T
 

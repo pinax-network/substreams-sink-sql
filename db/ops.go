@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -10,8 +11,9 @@ import (
 
 // Insert a row in the DB, it is assumed the table exists, you can do a
 // check before with HasTable()
-func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
+func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map[string]string, blockNum uint64, reversibleBlockNum *uint64) error {
 	uniqueID := createRowUniqueID(primaryKey)
+	entryKey := l.insertEntryKey(uniqueID, blockNum)
 
 	if l.tracer.Enabled() {
 		l.logger.Debug("processing insert operation", zap.String("table_name", tableName), zap.String("primary_key", uniqueID), zap.Int("field_count", len(data)))
@@ -32,7 +34,7 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 		l.entries.Set(tableName, entry)
 	}
 
-	if _, found := entry.Get(uniqueID); found && !l.getDialect().AllowPkDuplicates() {
+	if _, found := entry.Get(entryKey); found && !l.getDialect().AllowPkDuplicates() {
 		return fmt.Errorf("attempting to insert in table %q a primary key %q, that is already scheduled for insertion, insert should only be called once for a given primary key", tableName, primaryKey)
 	}
 
@@ -47,14 +49,32 @@ func (l *Loader) Insert(tableName string, primaryKey map[string]string, data map
 		}
 	}
 
-	entry.Set(uniqueID, l.newInsertOperation(table, primaryKey, data, reversibleBlockNum))
+	entry.Set(entryKey, l.newInsertOperation(table, primaryKey, data, reversibleBlockNum))
 	l.entriesCount++
 	return nil
 }
 
-func (l *Loader) Upsert(tableName string, primaryKey map[string]string, data map[string]string, reversibleBlockNum *uint64) error {
+// insertEntryKey returns the key under which an inserted row waits for the next flush.
+//
+// Dialects that only insert, like ClickHouse, keep one row per primary key and block: a key
+// written in several blocks of one flush is inserted once per block, in block order, so a flush
+// inserts the same rows as a flush after every block would, and materialized views see all of
+// them whatever the flush interval. A key written twice in one block still keeps only its last
+// write. A block number has no "@", so two keys cannot collide.
+//
+// Other dialects keep a single operation per primary key for the whole flush, which the later
+// operations on that key merge into or replace.
+func (l *Loader) insertEntryKey(uniqueID string, blockNum uint64) string {
+	if !l.getDialect().OnlyInserts() {
+		return uniqueID
+	}
+
+	return uniqueID + "@" + strconv.FormatUint(blockNum, 10)
+}
+
+func (l *Loader) Upsert(tableName string, primaryKey map[string]string, data map[string]string, blockNum uint64, reversibleBlockNum *uint64) error {
 	if l.getDialect().OnlyInserts() {
-		return l.Insert(tableName, primaryKey, data, reversibleBlockNum)
+		return l.Insert(tableName, primaryKey, data, blockNum, reversibleBlockNum)
 	}
 
 	uniqueID := createRowUniqueID(primaryKey)
