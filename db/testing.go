@@ -14,8 +14,21 @@ func NewTestLoader(
 	schema string,
 	tables map[string]*TableInfo,
 ) (*Loader, *TestTx) {
+	return NewTestLoaderWithFlushIntervals(zlog, tracer, schema, tables, 0, 0, 0)
+}
 
-	loader, err := NewLoader("psql://x:5432/x", 0, 0, 0, OnModuleHashMismatchIgnore, nil, zlog, tracer)
+// NewTestLoaderWithFlushIntervals is NewTestLoader with the given flush intervals. NewTestLoader
+// sets them all to 0, which flushes every block that buffered at least one row.
+func NewTestLoaderWithFlushIntervals(
+	zlog *zap.Logger,
+	tracer logging.Tracer,
+	schema string,
+	tables map[string]*TableInfo,
+	batchBlockFlushInterval int,
+	batchRowFlushInterval int,
+	liveBlockFlushInterval int,
+) (*Loader, *TestTx) {
+	loader, err := NewLoader("psql://x:5432/x", batchBlockFlushInterval, batchRowFlushInterval, liveBlockFlushInterval, OnModuleHashMismatchIgnore, nil, zlog, tracer)
 	if err != nil {
 		panic(err)
 	}
