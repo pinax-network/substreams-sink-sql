@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+* A ClickHouse insert that fails with `TOO_MANY_PARTS` (code 252) no longer fails the sink after three quick attempts. The flush waits for the merges, 10s at first and doubling to 2m per wait, for at most `--clickhouse-too-many-parts-max-wait` (default 30m; 0 restores the old behaviour), without using up the attempts other errors get. Added `--flush-retry-count` (default 3) and `--flush-retry-delay` (default 5s) for those attempts, which were fixed.
+
 * Bumped `github.com/AfterShip/clickhouse-sql-parser` to v0.4.9 to add support for `REFRESH` expressions when creating materialized views.
 * Improved batch block flush logic to flush after a certain number of blocks instead of taking by modulo.
 

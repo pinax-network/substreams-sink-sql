@@ -22,6 +22,9 @@ import (
 
 var (
 	onModuleHashMistmatchFlag = "on-module-hash-mistmatch"
+	flushRetryCountFlag       = "flush-retry-count"
+	flushRetryDelayFlag       = "flush-retry-delay"
+	tooManyPartsMaxWaitFlag   = "clickhouse-too-many-parts-max-wait"
 )
 
 var supportedOutputTypes = "sf.substreams.sink.database.v1.DatabaseChanges,sf.substreams.database.v1.DatabaseChanges"
@@ -69,6 +72,8 @@ func newDBLoader(
 	if err != nil {
 		return nil, fmt.Errorf("new psql loader: %w", err)
 	}
+	dbLoader.SetFlushRetries(sflags.MustGetInt(cmd, flushRetryCountFlag), sflags.MustGetDuration(cmd, flushRetryDelayFlag))
+	dbLoader.SetTooManyPartsMaxWait(sflags.MustGetDuration(cmd, tooManyPartsMaxWaitFlag))
 
 	if err := dbLoader.LoadTables(); err != nil {
 		var e *db.SystemTableError
@@ -87,6 +92,12 @@ func newDBLoader(
 // AddCommonSinkerFlags adds the flags common to all command that needs to create a sinker,
 // namely the `run` and `generate-csv` commands.
 func AddCommonSinkerFlags(flags *pflag.FlagSet) {
+	flags.Int(flushRetryCountFlag, 3, "Attempts a flush gets before the sink fails, for errors other than ClickHouse's TOO_MANY_PARTS")
+	flags.Duration(flushRetryDelayFlag, 5*time.Second, "Wait between two attempts of a failed flush")
+	flags.Duration(tooManyPartsMaxWaitFlag, db.DefaultTooManyPartsMaxWait, cli.FlagDescription(`
+		Total time a flush waits for ClickHouse's merges when an insert fails with TOO_MANY_PARTS (code 252) before it
+		fails; 0 treats the error like any other. The waits start at %s and double up to %s each.
+	`, db.DefaultTooManyPartsBackoff, db.DefaultTooManyPartsMaxBackoff))
 	flags.String(onModuleHashMistmatchFlag, "error", cli.FlagDescription(`
 		What to do when the module hash in the manifest does not match the one in the database, can be 'error', 'warn' or 'ignore'
 

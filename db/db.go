@@ -26,6 +26,28 @@ func NewOrderedMap[K comparable, V any]() *OrderedMap[K, V] {
 	return &OrderedMap[K, V]{OrderedMap: orderedmap.New[K, V]()}
 }
 
+// The default wait for ClickHouse's TOO_MANY_PARTS error: the first wait, the
+// longest single wait, and the total wait before the error fails the flush.
+const (
+	DefaultTooManyPartsBackoff    = 10 * time.Second
+	DefaultTooManyPartsMaxBackoff = 2 * time.Minute
+	DefaultTooManyPartsMaxWait    = 30 * time.Minute
+)
+
+// SetFlushRetries sets how many attempts a flush gets for an error other than
+// ClickHouse's TOO_MANY_PARTS, and the wait between them.
+func (l *Loader) SetFlushRetries(attempts int, delay time.Duration) {
+	l.maxFlushRetries = max(attempts, 1)
+	l.sleepBetweenFlushRetries = delay
+}
+
+// SetTooManyPartsMaxWait sets the total time a flush waits for ClickHouse's
+// merges after TOO_MANY_PARTS errors before it fails; 0 treats the error like
+// any other.
+func (l *Loader) SetTooManyPartsMaxWait(maxWait time.Duration) {
+	l.tooManyPartsMaxWait = maxWait
+}
+
 type SystemTableError struct {
 	error
 }
@@ -48,6 +70,10 @@ type Loader struct {
 	moduleMismatchMode       OnModuleHashMismatch
 	maxFlushRetries          int
 	sleepBetweenFlushRetries time.Duration
+	tooManyPartsBackoff      time.Duration
+	tooManyPartsMaxBackoff   time.Duration
+	tooManyPartsMaxWait      time.Duration
+	sleep                    func(context.Context, time.Duration) error
 
 	logger *zap.Logger
 	tracer logging.Tracer
@@ -86,6 +112,10 @@ func NewLoader(
 		batchRowFlushInterval:    batchRowFlushInterval,
 		maxFlushRetries:          3,
 		sleepBetweenFlushRetries: 5 * time.Second,
+		tooManyPartsBackoff:      DefaultTooManyPartsBackoff,
+		tooManyPartsMaxBackoff:   DefaultTooManyPartsMaxBackoff,
+		tooManyPartsMaxWait:      DefaultTooManyPartsMaxWait,
+		sleep:                    sleepContext,
 		liveBlockFlushInterval:   liveBlockFlushInterval,
 		moduleMismatchMode:       moduleMismatchMode,
 		logger:                   logger,
